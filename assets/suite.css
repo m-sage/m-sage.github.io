@@ -1,0 +1,41 @@
+/* M-SAGE suite bar, in MINERVA's family look (Geist, uppercase tracked labels, glass pills, blue-violet-pink glow) */
+#msage-suite{position:relative;z-index:20;font-family:Geist,"Geist Fallback",Inter,"Segoe UI",system-ui,-apple-system,sans-serif;color:#f2f4ff}
+#msage-suite a{text-decoration:none;color:inherit}
+.ms-host{display:flex;align-items:center;gap:32px;padding:14px 48px;min-height:84px;
+  background:radial-gradient(520px 160px at 8% 0%,rgba(36,163,247,.30),transparent 70%),radial-gradient(520px 160px at 80% 30%,rgba(245,69,177,.22),transparent 70%),
+  linear-gradient(90deg,#1d6188 0%,#355a92 38%,#56468a 70%,#6a3a78 100%);border-bottom:1px solid rgba(255,255,255,.08)}
+.ms-host-logo{display:inline-flex;align-items:center;gap:12px;padding:8px 22px 8px 8px;border-radius:999px;flex:none;
+  background:linear-gradient(135deg,rgba(220,190,255,.38),rgba(152,88,212,.3));border:1px solid rgba(210,185,255,.45);
+  font-size:14px;font-weight:600;letter-spacing:.32em;text-transform:uppercase}
+.ms-dna{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);letter-spacing:0;font-size:16px}
+.ms-host-nav{display:flex;justify-content:safe center;gap:30px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.ms-host-nav::-webkit-scrollbar{display:none}
+.ms-host-nav a{position:relative;white-space:nowrap;font-size:13.5px;font-weight:600;letter-spacing:.26em;text-transform:uppercase;color:rgba(255,255,255,.75);padding:6px 0;transition:color .2s}
+.ms-host-nav a:hover{color:#fff}
+.ms-host-nav a.on{color:#fff}
+.ms-host-nav a.on::after{content:"";position:absolute;left:0;right:.28em;bottom:-4px;height:2px;border-radius:2px;background:linear-gradient(90deg,#2dd4bf,#a78bfa,#f472b6)}
+.ms-host-side{display:flex;align-items:center;gap:14px;flex:none}
+.ms-host-side a{font-size:11.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.8)}
+.ms-host-side a.pill{padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.22);letter-spacing:normal;text-transform:none;font-size:11px}
+.ms-host-side a.pill.strong{letter-spacing:.2em;text-transform:uppercase;font-size:12px;padding:8px 14px}
+.ms-suite{display:flex;align-items:center;gap:20px;padding:10px 24px;background:rgba(6,10,24,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid rgba(255,255,255,.07)}
+.ms-brand{display:flex;align-items:baseline;gap:10px;flex:none}
+.ms-brand b{font-size:19px;font-weight:800;letter-spacing:.14em;background:linear-gradient(90deg,#2dd4bf,#38bdf8,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+.ms-brand span{font-size:12px;color:rgba(242,244,255,.6);letter-spacing:.02em}
+.ms-tabs{display:flex;gap:6px;margin-left:auto;padding:4px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
+.ms-tab{display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:999px;font-size:12.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:rgba(242,244,255,.75);transition:background .2s,color .2s;white-space:nowrap}
+.ms-tab i{font-style:normal;font-size:13px;letter-spacing:0;opacity:.85}
+.ms-tab:hover{color:#fff;background:rgba(255,255,255,.07)}
+.ms-tab.on{color:#061018;background:linear-gradient(135deg,#2dd4bf,#7dd3fc);box-shadow:0 0 18px rgba(45,212,191,.35)}
+.ms-tab.on i{opacity:1}
+/* the pages' own view switches and logos are replaced by this bar */
+.views{display:none!important}
+#msage-suite ~ * .topbar .brand .logo,#msage-suite ~ .bar > .logo,#msage-suite ~ .cockpit .topbar .brand .logo{display:none}
+@media (max-width:1560px){.ms-host-side a:not(.strong){display:none}.ms-host{padding:12px 28px;gap:24px}}
+@media (max-width:1240px){.ms-host-side{display:none}.ms-host-nav{gap:22px}.ms-host-nav a{letter-spacing:.2em;font-size:12.5px}}
+@media (max-width:980px){.ms-host{gap:16px;padding:8px 14px;min-height:64px}.ms-host-nav{justify-content:flex-start}.ms-host-nav{gap:18px}.ms-host-nav a{font-size:11.5px;letter-spacing:.18em}
+  .ms-suite{flex-wrap:wrap;padding:8px 14px;gap:8px}.ms-brand span{display:none}.ms-tabs{margin-left:0;width:100%;justify-content:space-between}
+  .ms-tab{flex:1;justify-content:center;padding:7px 8px;letter-spacing:.08em;font-size:11.5px}}
+@media (max-width:520px){.ms-host-logo{padding:6px 10px;letter-spacing:.16em;font-size:11.5px}.ms-tab i{display:none}}
+@media (prefers-reduced-motion:reduce){.ms-tab,.ms-host-nav a{transition:none}}
