@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M-SAGE 조종석 · 상세</title>
+<link rel="stylesheet" href="assets/cockpit.css?v=202611242007">
+<link rel="stylesheet" href="assets/module.css?v=202611242007">
+<link rel="stylesheet" href="assets/custom.css?v=202611242007">
+</head>
+<body>
+<div class="mod">
+  <header class="topbar">
+    <div class="brand"><a class="back" href="cockpit.html">← 조종석</a><span class="logo">M-SAGE</span><span class="sub" id="mod-title">상세</span><nav class="views"><a href="cockpit.html">조종석</a><a href="story.html" id="mod-story">한 페이지 이야기</a><a href="module.html?m=insights">인사이트 랩</a></nav></div>
+<script>(function(){var m=new URLSearchParams(location.search).get("m")||"",s={insights:"consensus",minerva:"minerva",findings:"findings",radar:"radar",people:"people",world:"world",agents:"engine",backfill:"engine",gaps:"gaps"}[m];
+if(s)document.getElementById("mod-story").href="story.html#s-"+s;document.querySelectorAll(".views a").forEach(function(a){if(a.getAttribute("href")==="module.html?m="+m)a.className="on";});})();</script>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="clock"><span id="clock">--:--:--</span><small id="fresh"></small></div>
+  </header>
+  <p class="intro" id="intro"></p>
+  <main id="view"></main>
+  <p class="disclaimer2">논문 수·인용·관심은 영향의 단서일 뿐 효과·인과·연구 질의 증거가 아닙니다. 소속은 논문에 적힌 문자열이며 기관 식별자로 확인하지 않았습니다. ORCID가 없으면 같은 이름을 한 사람으로 봅니다.</p>
+</div>
+<div class="tip" id="tip"></div>
+<script src="data/msage-data.js?v=202611242007"></script>
+<script src="assets/echarts.min.js?v=202611242007"></script>
+<script src="assets/module.js?v=202611242007"></script>
+<script src="assets/custom.js?v=202611242007" defer></script>
+</body>
+</html>

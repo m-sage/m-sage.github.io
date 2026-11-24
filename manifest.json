@@ -1,0 +1,76 @@
+{
+ "schema": "msage-site-package-1",
+ "release": "2026.11.24",
+ "as_of": "2026-11-23",
+ "built_at": "2026-11-24T20:07Z",
+ "public": true,
+ "sources": {
+  "MSAGE_INSIGHTS": "5cf73e1de6e325dc4c0b44e2f51f20fde7e0fdb1f229efafe88ece776a69069d",
+  "MSAGE_STORIES": "629fe97f83a25e11397cb209fd164771c226e362b43bd227d25fe3a1cc8f92e8",
+  "MSAGE_DATA": "e977e3c88e49fe6952eb9d60c5b54f0252813db2f03aa222c7004e420747f8e1"
+ },
+ "papers_in_graph": 147917,
+ "files": {
+  "README.md": {
+   "sha256": "6eeb28f50371835638dcc6680d6176175c74d36d15f556bf98e2dc770636c060",
+   "bytes": 1505
+  },
+  "assets/cockpit.css": {
+   "sha256": "1756c40328e10e7574d9ef26cb5f74613fd27189c7b7abf284d7843666a9ec49",
+   "bytes": 13845
+  },
+  "assets/cockpit.js": {
+   "sha256": "1df74fb19c5b0851864aa61723bde58bda00f0ad4dd700061ce5f99f6220a017",
+   "bytes": 53769
+  },
+  "assets/custom.css": {
+   "sha256": "e5747690f65667f64ff06c8b3299a7a463a497eaaa98d87af1b021eec7ccb17a",
+   "bytes": 257
+  },
+  "assets/custom.js": {
+   "sha256": "5b2ca078fbb09d3d94fe3ea44b9b0da18225bc2f6c30c85a9a133fe395cebc92",
+   "bytes": 197
+  },
+  "assets/echarts.min.js": {
+   "sha256": "b66b25aeb4df84e33199dc21694014d336d222cbd9deb0e5a7c14bd6aa0d0fd0",
+   "bytes": 1121883
+  },
+  "assets/module.css": {
+   "sha256": "621b610ae01e381d0b6e29def8bb7bf08b9e51a0ce150b1d451b550621e61660",
+   "bytes": 5173
+  },
+  "assets/module.js": {
+   "sha256": "2236ce8e000c09a5cd56279f4eee72b0450719073944fcdcec02e84950911d7a",
+   "bytes": 45939
+  },
+  "assets/story.css": {
+   "sha256": "10865acbe407789e69bd207768d88a80a047e33507d980ee99c6a63efd8aeec6",
+   "bytes": 9698
+  },
+  "assets/story.js": {
+   "sha256": "e23f95709b68e1b31553eb2fa2b45bc2872952c249b57749ff2059af0c3e3904",
+   "bytes": 74446
+  },
+  "cockpit.html": {
+   "sha256": "dcc946fd6147c66c6989f5cd5d02757d744690336097c9bd036bbf91cb0cc952",
+   "bytes": 8418
+  },
+  "data/msage-data.js": {
+   "sha256": "b220359fd17dc168bf5502f1bdb39cd0bdc91811dc2bccfdb97662eab034de61",
+   "bytes": 1766092
+  },
+  "index.html": {
+   "sha256": "6eca0a3984e7c28fd7831d3e04d9d88dab9fb34188792afaf3c82a5bde17e2ff",
+   "bytes": 433
+  },
+  "module.html": {
+   "sha256": "7d66d4d448ab137b1f70993ebc7206d47f02c12fed724d979cc3a42e879b00a9",
+   "bytes": 1989
+  },
+  "story.html": {
+   "sha256": "9e68c0f490168276e46ab60c8e223d0570ffee1561da6f6fcfab18f9a50faa3c",
+   "bytes": 1794
+  }
+ },
+ "total_bytes": 3105438
+}

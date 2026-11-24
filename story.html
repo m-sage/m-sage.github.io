@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M-SAGE · 마이크로바이옴 연구 이야기</title>
+<link rel="stylesheet" href="assets/story.css?v=202611242007">
+<link rel="stylesheet" href="assets/custom.css?v=202611242007">
+</head>
+<body>
+<header class="bar" id="bar">
+  <a class="logo" href="#top">M-SAGE</a>
+  <nav class="views"><a href="cockpit.html" data-t="nav_cockpit"></a><a class="on" href="story.html" data-t="nav_story"></a><a href="module.html?m=insights" data-t="nav_lab"></a></nav>
+  <span class="livestrip" id="livestrip"></span>
+  <nav class="toc" id="toc"></nav>
+  <div class="toggles">
+    <div class="sw" id="sw-lang" role="group" aria-label="language"><button data-v="ko">한국어</button><button data-v="en">English</button></div>
+    <div class="sw" id="sw-level" role="group" aria-label="reading level"><button data-v="eli10">ELI10</button><button data-v="eli20">ELI20</button><button data-v="pro">PRO</button></div>
+  </div>
+</header>
+<div class="progress"><i id="prog"></i></div>
+<div class="levelnote" id="levelnote"></div>
+<main id="top">
+  <section class="hero" id="s-hero">
+    <p class="kicker" data-t="kicker"></p>
+    <h1 data-t="title"></h1>
+    <p class="brief" id="brief"></p>
+    <div class="counters" id="counters"></div>
+    <p class="scrollhint" data-t="scroll"></p>
+  </section>
+  <div id="sections"></div>
+  <footer class="foot" id="foot"></footer>
+</main>
+<div class="tip" id="tip"></div>
+<script src="data/msage-data.js?v=202611242007"></script>
+<script src="assets/echarts.min.js?v=202611242007" defer></script>
+<script src="assets/story.js?v=202611242007" defer></script>
+<script src="assets/custom.js?v=202611242007" defer></script>
+</body>
+</html>

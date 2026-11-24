@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M-SAGE 조종석 · 마이크로바이옴 연구 실시간</title>
+<link rel="stylesheet" href="assets/cockpit.css?v=202611242007">
+<link rel="stylesheet" href="assets/custom.css?v=202611242007">
+</head>
+<body>
+<div class="cockpit">
+  <header class="topbar">
+    <div class="brand"><span class="logo">M-SAGE</span><nav class="views"><a class="on" href="cockpit.html">조종석</a><a href="story.html">한 페이지 이야기</a><a href="module.html?m=insights">인사이트 랩</a></nav></div>
+    <div class="toggles"><div class="sw" id="sw-lang" role="group" aria-label="language"><button data-v="ko">한국어</button><button data-v="en">English</button></div>
+      <div class="sw lvl" id="sw-level" role="group" aria-label="reading level"><button data-v="eli10" title="10살 눈높이">ELI10</button><button data-v="eli20" title="대학생 눈높이">ELI20</button><button data-v="pro" title="연구자용">PRO</button></div></div>
+    <div class="lights" id="lights"></div>
+    <div class="clock"><span id="clock">--:--:--</span><small id="fresh">자료 확인 중</small></div>
+  </header>
+
+  <section class="brief" id="brief"><span class="pulse"></span><span class="btxt"><small class="levelnote" id="levelnote"></small><span id="brief-text">자료를 불러오는 중입니다…</span></span></section>
+
+  <section class="gauges">
+    <div class="gauge" data-tip="Europe PMC에서 모은 인체 마이크로바이옴 논문 수"><div class="g" id="g-papers"></div><div class="gl">모은 논문<b id="v-papers">-</b><small id="s-papers"></small></div></div>
+    <div class="gauge" data-tip="AI가 지난 1시간 동안 초록을 읽고 원문 문장과 대조해 통과시킨 논문 수"><div class="g" id="g-read"></div><div class="gl">AI가 읽은 논문 / 시간<b id="v-read">-</b><small id="s-read"></small></div></div>
+    <div class="gauge" data-tip="지난 1시간 동안 Europe PMC에서 받아 온 결과 쪽 수"><div class="g" id="g-collect"></div><div class="gl">논문 수집 / 시간<b id="v-collect">-</b><small id="s-collect">1쪽 = 논문 100편</small></div></div>
+    <div class="gauge" data-tip="AI(Bedrock) 사용 비용. 사용자가 승인한 한도 안에서만 씁니다"><div class="g" id="g-cost"></div><div class="gl" id="l-cost">AI 비용<b id="v-cost">-</b><small id="s-cost"></small></div></div>
+  </section>
+
+  <section class="panel kg-cons">
+    <div class="ph" onclick="location.href='module.html?m=insights'"><b>논문들이 합의한 관계</b><span>여러 논문이 같은 방향으로 보고한 미생물–질병 관계</span><i class="q" data-tip="빨강 ▲ = 그 질병에서 이 미생물이 많아졌다는 보고가 우세, 파랑 ▼ = 줄었다는 보고가 우세. 숫자는 근거 문장 수. 인과가 아니라 '함께 관찰됨'입니다.">?</i></div>
+    <div class="cons" id="cons"></div>
+  </section>
+
+  <section class="panel kg-rise">
+    <div class="ph" onclick="location.href='module.html?m=insights'"><b>떠오르는 주제</b><span id="rise-sub">최근 2년 비율 ÷ 3–5년 전 비율</span><i class="q" data-tip="연구자들의 관심이 빠르게 늘고 있는 질병·방법·개입입니다. ×2는 논문 속 등장 비율이 두 배가 됐다는 뜻.">?</i></div>
+    <div class="seg mini" id="rise-seg"></div>
+    <div class="chart" id="c-rise"></div>
+  </section>
+
+  <section class="panel kg-next">
+    <div class="ph" onclick="location.href='module.html?m=insights'"><b>다음에 해야 할 연구</b><span>관심 증가 · 논쟁 · 저자들이 밝힌 한계를 합친 자동 순위</span><i class="q" data-tip="연구가 늘고 있는데 결론이 엇갈리거나 한계가 많이 지적된 분야일수록 위로 올라옵니다. 방향 제시일 뿐 판단은 아닙니다.">?</i></div>
+    <div class="nexts" id="nexts"></div>
+  </section>
+
+  <section class="panel radar">
+    <div class="ph" onclick="location.href='module.html?m=radar'"><b>연구 관심 레이더</b><span>오른쪽일수록 최근 관심이 늘어난 주제 · 원 크기 = 논문 수</span><i class="q" data-tip="가로축은 최근 3개월 동안 논문에서 차지하는 비율이 얼마나 변했는지, 세로축은 최근 논문 수입니다. 깜빡이는 초록 원이 가장 빠르게 뜨는 주제. 원을 누르면 그 주제의 최신 발견이 오른쪽에 나옵니다.">?</i></div>
+    <div class="chart" id="c-radar"></div>
+  </section>
+
+  <section class="panel feed">
+    <div class="ph" onclick="location.href='module.html?m=findings'"><b>방금 들어온 발견</b><span id="feed-theme">AI가 초록을 읽고 원문과 대조한 요약</span><i class="q" data-tip="새로 읽힌 논문의 핵심 결과를 한 문장으로 보여 줍니다. 7초마다 바뀌고, '원문'을 누르면 논문으로 갑니다.">?</i></div>
+    <div class="ticker" id="ticker"></div>
+    <div class="movers" id="movers"></div>
+  </section>
+
+  <section class="panel world">
+    <div class="ph" onclick="location.href='module.html?m=world'"><b>세계 연구 흐름</b><span>진할수록 논문이 많은 나라 · 흐르는 선 = 나라 간 공동 연구</span><i class="q" data-tip="저자 소속 국가 기준입니다. 노란 원이 클수록 그 나라에서 나온 논문이 많습니다.">?</i></div>
+    <div class="tilemap" id="tilemap"></div>
+  </section>
+
+  <section class="panel people">
+    <div class="ph" onclick="location.href='module.html?m=people'"><b>연구를 이끄는 사람들</b><span>논문을 많이 쓴 연구자 · 선 = 함께 쓴 논문</span><i class="q" data-tip="별 크기는 논문 수, 색은 나라입니다. 별을 누르면 아래에 그 연구자의 최근 발견이 나옵니다.">?</i></div>
+    <div class="chart" id="c-people"></div>
+    <div class="who" id="who"></div>
+  </section>
+
+  <section class="panel backfill">
+    <div class="ph" onclick="location.href='module.html?m=backfill'"><b>과거 논문 채우기</b><span id="bf-sub">달마다 한 칸</span><i class="q" data-tip="2015년부터 지금까지 달마다 논문을 정해진 수만큼 모읍니다. 초록 칸 = 다 모은 달, 노란 칸 = 지금 모으는 달.">?</i></div>
+    <div class="mgrid" id="mgrid"></div>
+    <div class="years" id="years"></div>
+  </section>
+
+  <section class="panel gaps">
+    <div class="ph" onclick="location.href='module.html?m=gaps'"><b>빈 곳과 다음 연구</b><span>몸 부위 × 연구 주제 · 어두운 칸 = 아직 연구가 적은 곳</span><i class="q" data-tip="칸의 숫자는 논문 수입니다. 어두운 칸은 앞으로 연구할 여지가 큰 조합일 수 있습니다.">?</i></div>
+    <div class="chart" id="c-gaps"></div>
+    <ul class="next" id="next"></ul>
+  </section>
+
+  <section class="panel log">
+    <div class="ph" onclick="location.href='module.html?m=agents'"><b>에이전트 오케스트라</b><span>뒤에서 쉬지 않고 일하는 프로그램들 · 초록 = 정상</span><i class="q" data-tip="수집·판독·지식 그래프·Neo4j·MINERVA 사본 같은 작업이 각각 정상인지 보여 줍니다. 노랑은 주의, 빨강은 멈춤.">?</i></div>
+    <div class="agents" id="agents"></div>
+    <div class="spark" id="spark"></div>
+    <ul class="events" id="events" hidden></ul>
+  </section>
+
+  <nav class="dock">
+    <a class="pri" href="story.html" style="border-color:#a3e635;color:#a3e635">한 페이지로 전체 보기 (Story · EN/KO)</a>
+    <a class="pri" href="module.html?m=insights" style="border-color:#a78bfa;color:#a78bfa">인사이트 랩 (지식 그래프)</a>
+    <a class="pri" href="module.html?m=people" style="border-color:#2dd4bf;color:#2dd4bf">연구자 랭킹</a>
+    <a class="pri" href="module.html?m=agents">에이전트 상세</a>
+    <a class="pri" href="module.html?m=minerva">MINERVA 비교</a>
+    
+    
+    <span class="disclaimer">AI가 자동으로 읽은 잠정 결과입니다 · 논문 수와 관심은 효과나 인과의 증거가 아닙니다 · 전문가 검증 전</span>
+  </nav>
+</div>
+<div class="tip" id="tip"></div>
+<script src="data/msage-data.js?v=202611242007"></script>
+<script src="assets/echarts.min.js?v=202611242007" defer></script>
+<script src="assets/cockpit.js?v=202611242007" defer></script>
+<script src="assets/custom.js?v=202611242007" defer></script>
+</body>
+</html>
