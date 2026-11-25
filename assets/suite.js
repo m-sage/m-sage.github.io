@@ -9,6 +9,7 @@
  *   window.MSAGE_ROUTES = {cockpit, story, module}     page addresses (packaged site: cockpit.html, story.html, module.html)
  *   window.MSAGE_HOST   = {name, home, links:[{label, href}], hidden}   the host navigation; default = MINERVA
  *     (can also be set later, e.g. in assets/custom.js, followed by window.MSAGE_SUITE.render())
+ *   window.MSAGE_MESSAGES = [{date, type: info|new|warning, ko, en, link, until, pages}]   announcements (messages.js)
  * Language follows the pages' own 한국어/English switch (localStorage msage.lang, <html lang>).
  */
 (function () {
@@ -58,8 +59,35 @@
       '<nav class="ms-tabs" aria-label="M-SAGE">' + tabs.map(function (x) {
         return '<a class="ms-tab' + (x[0] === cur ? " on" : "") + '" href="' + esc(x[1]) + '" title="' + esc(x[4]) + '"' + (x[0] === cur ? ' aria-current="page"' : "") +
           '><i aria-hidden="true">' + x[2] + "</i>" + esc(x[3]) + "</a>"; }).join("") + "</nav></div>";
+    el.innerHTML += messages(cur);
     document.documentElement.classList.toggle("ms-embedded", !!embedded);
   }
+  /* announcements: window.MSAGE_MESSAGES from messages.js (edited by the team, kept across updates) */
+  var DISMISS = "msage.dismissed";
+  function dismissed() { try { return JSON.parse(localStorage.getItem(DISMISS) || "[]"); } catch (e) { return []; } }
+  function messages(cur) {
+    var list = Array.isArray(window.MSAGE_MESSAGES) ? window.MSAGE_MESSAGES : [], l = lang(), today = new Date().toISOString().slice(0, 10), gone = dismissed();
+    var shown = list.filter(function (m) {
+      if (!m || !(m.ko || m.en)) return false;
+      if (m.until && String(m.until) < today) return false;
+      if (Array.isArray(m.pages) && m.pages.length && m.pages.indexOf(cur) < 0) return false;
+      return gone.indexOf(key(m)) < 0;
+    });
+    if (!shown.length) return "";
+    var more = {ko: "자세히", en: "More"}[l], close = {ko: "닫기", en: "Dismiss"}[l];
+    return '<div class="ms-msgs" role="region" aria-label="' + (l === "ko" ? "공지" : "Announcements") + '">' + shown.map(function (m) {
+      var type = {"new": "new", warning: "warning"}[m.type] || "info", text = (l === "en" ? (m.en || m.ko) : (m.ko || m.en));
+      return '<div class="ms-msg ' + type + '"><i aria-hidden="true">' + {info: "ℹ", "new": "✦", warning: "!"}[type] + "</i><span>" +
+        (m.date ? '<em>' + esc(m.date) + "</em>" : "") + esc(text) + (m.link ? ' <a href="' + esc(m.link) + '">' + more + " →</a>" : "") +
+        '</span><button type="button" data-key="' + esc(key(m)) + '" aria-label="' + close + '">×</button></div>'; }).join("") + "</div>";
+  }
+  function key(m) { return String(m.id || ((m.date || "") + "|" + (m.ko || m.en || "")).slice(0, 120)); }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest(".ms-msg button"); if (!b) return;
+    var gone = dismissed(); gone.push(b.getAttribute("data-key"));
+    try { localStorage.setItem(DISMISS, JSON.stringify(gone.slice(-50))); } catch (err) {}
+    b.parentNode.remove();
+  });
   function start() {
     render();
     // follow the page's language switch (the pages set <html lang> when it changes)

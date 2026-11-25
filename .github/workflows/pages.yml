@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check messages.js (a typo stops the publish; the site keeps its previous version)
+        run: node --check messages.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

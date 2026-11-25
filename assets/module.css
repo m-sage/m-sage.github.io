@@ -51,3 +51,5 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff07}tr.sel{background:#2
 @media (max-width:1100px){.row2,.row3{grid-template-columns:1fr}}
 .intro{margin:10px 2px 0;padding:10px 14px;border-left:3px solid var(--violet);background:#a78bfa10;border-radius:0 12px 12px 0;color:var(--text);font-size:14px;line-height:1.6}
 @media (max-width:640px){.mod{padding:8px 10px 24px}.topbar{flex-wrap:wrap}.box{padding:12px}.big{height:420px}}
+.topbar .brand{flex-wrap:wrap;row-gap:8px}.topbar .brand .toggles{margin-left:12px}
+html,body{max-width:100%;overflow-x:hidden}
