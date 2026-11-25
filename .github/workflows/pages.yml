@@ -11,15 +11,21 @@ concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
-  deploy:
+  # two jobs: the deploy job reads the artifact only after the upload job has finished
+  # (in one job, deploy-pages sometimes finds "0 artifacts" right after the upload)
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
