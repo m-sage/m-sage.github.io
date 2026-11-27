@@ -307,6 +307,13 @@ function insights(d) {
   INS = d;
   const T = {map: K("지식 지도", "Knowledge map"), consensus: K("합의 · 논쟁", "Consensus · debate"), signature: K("미생물 시그니처", "Microbe signatures"),
     trends: K("떠오르는 · 지는 주제", "Rising · fading"), gaps: K("연구 공백 · 다음 연구", "Gaps · next studies"), novel: K("MINERVA 대비 새 연결", "New vs MINERVA")};
+  // newer sections: a tab only when the data carries the key (older releases simply do not show them)
+  const hk = (...a) => a.some(x => d[x] !== undefined);
+  if (hk("reversal")) T.reversal = K("되돌리기 후보", "Reversal candidates");
+  if (hk("evidence_quality", "translation_gap", "resolution")) T.quality = K("근거 품질", "Evidence quality");
+  if (hk("trials", "industry")) T.clinic = K("임상 → 제품", "From evidence to clinic");
+  if (hk("severity", "risk", "mechanism_triangles")) T.severity = K("중증도·위험·기전", "Severity, risk, mechanisms");
+  if (!T[ipaneKey]) ipaneKey = "map";
   const k = d.counts || {}, b = d.build || {};
   $("view").innerHTML = `<div class="kpis">
       <div class="kpi"><b>${fmt(b.papers_read)}</b><span>${K("읽은 논문", "Papers read")}</span></div>
@@ -319,7 +326,7 @@ function insights(d) {
     <div id="ipane"></div>
     ${lang === "ko" ? `<p class="hint">${(d.caveats || []).map(esc).join(" · ")}</p>` : `<p class="hint">${caveats(d.caveats).map(esc).join(" · ")}</p>`}`;
   const pane = $("ipane");
-  const show = key => { ipaneKey = key; charts.splice(0).forEach(c => c.dispose()); pane.innerHTML = ""; ({map: imap, consensus: icons, signature: isig, trends: itrend, gaps: igaps, novel: inovel})[key](d, pane); };
+  const show = key => { ipaneKey = key; charts.splice(0).forEach(c => c.dispose()); pane.innerHTML = ""; ({map: imap, consensus: icons, signature: isig, trends: itrend, gaps: igaps, novel: inovel, reversal: irev, quality: iqual, clinic: iclinic, severity: isrm})[key](d, pane); };
   $("iseg").onclick = e => { const x = e.target.closest("button"); if (!x) return; document.querySelectorAll("#iseg button").forEach(y => y.classList.toggle("on", y === x)); show(x.dataset.k); };
   show(ipaneKey);
 }
@@ -356,12 +363,17 @@ function imap(d, pane) {
   g.on("click", p => { if (p.dataType === "node") side(p.data.id); });
   if (N.diseases.length) side("D:" + N.diseases.slice().sort((a, b) => b.w - a.w)[0].id);
 }
-function pairTable(rows, withMinerva) {
-  return `<table><thead><tr><th>${K("미생물", "Microbe")}</th><th>${K("질병", "Condition")}</th><th>${K("감소 ◀ ▶ 증가", "Lower ◀ ▶ higher")}</th><th class="n">${K("논문", "Papers")}</th>${withMinerva ? "<th>MINERVA</th>" : ""}</tr></thead><tbody>${rows.map((p, i) => {
+// replication (newer data): independent author groups and years; contradictions show the groups behind each direction
+const repCell = p => p.groups_increase != null || p.groups_decrease != null
+  ? `<span style="color:${DOWN}">↓${fmt(p.groups_decrease)}</span> / <span style="color:${UP}">↑${fmt(p.groups_increase)}</span><small>${K("그룹", "groups")} · ${yrs(p)}</small>`
+  : `${fmt(p.groups)} <small>${K("그룹", "groups")} · ${yrs(p)}</small>${p.robust ? `<br>${robustB(true)}` : ""}`;
+function pairTable(rows, withMinerva, withRep) {
+  withRep = withRep && rows.some(p => p.groups != null);
+  return `<table><thead><tr><th>${K("미생물", "Microbe")}</th><th>${K("질병", "Condition")}</th><th>${K("감소 ◀ ▶ 증가", "Lower ◀ ▶ higher")}</th><th class="n">${K("논문", "Papers")}</th>${withRep ? `<th data-tip="${esc(K("공저자를 공유하지 않는 독립 연구 그룹 수와 보고 연도", "Independent author groups (no shared author) and years reported"))}">${K("재현", "Replication")}</th>` : ""}${withMinerva ? "<th>MINERVA</th>" : ""}</tr></thead><tbody>${rows.map((p, i) => {
     const tot = p.inc + p.dec || 1;
     return `<tr class="click" data-i="${i}"><td><i>${esc(p.taxon)}</i></td><td>${esc(dx(p.disease, p.disease_label))}</td>
       <td style="width:34%"><div class="div"><span style="width:${50 * p.dec / tot}%;background:${DOWN}"></span><span style="width:${50 * p.inc / tot}%;background:${UP}"></span></div>
-      <small>${p.dec} ◀ ▶ ${p.inc}${p.null ? " · " + K("차이 없음", "no difference") + " " + p.null : ""}${p.ai_checked && level !== "eli10" ? ` · <span style="color:var(--violet)">${K("그룹 대조 확인", "group-checked")} ${p.ai_checked}</span>` : ""}</small></td><td class="n">${p.papers}</td>
+      <small>${p.dec} ◀ ▶ ${p.inc}${p.null ? " · " + K("차이 없음", "no difference") + " " + p.null : ""}${p.ai_checked && level !== "eli10" ? ` · <span style="color:var(--violet)">${K("그룹 대조 확인", "group-checked")} ${p.ai_checked}</span>` : ""}</small></td><td class="n">${p.papers}</td>${withRep ? `<td class="rep">${p.groups != null ? repCell(p) : "—"}</td>` : ""}
       ${withMinerva ? `<td>${p.minerva == null ? "—" : p.minerva.disease_missing ? `<span style="color:var(--dim)">${K("질병 없음", "no condition")}</span>` : p.minerva.absent ? `<span style="color:var(--lime)">${K("없음 (새 연결)", "absent (new link)")}</span>` : (p.minerva_agrees === false ? `<span style="color:var(--coral)">${K("반대 방향", "opposite")}</span>` : `<span style="color:var(--teal)">${K("같은 방향", "same direction")}</span>`)}</td>` : ""}</tr>`; }).join("")}</tbody></table>`;
 }
 function icons(d, pane) {
@@ -373,12 +385,12 @@ function icons(d, pane) {
     eli20: ["증가와 감소 보고가 함께 30% 이상 섞인 쌍 · 해결이 필요한 질문입니다", "Pairs where increase and decrease each make up ≥30% · open questions"],
     pro: ["논쟁 = 소수 방향 비율 ≥ 0.3 · 하위 집단·방법 차이로 갈리는지는 '미생물 시그니처'와 자동 추가 분석에서 봅니다", "Debate = minority direction share ≥ 0.3 · whether subgroups or methods split it is in signatures and the automatic follow-ups"]});
   pane.innerHTML = `<div class="row2"><div class="box"><h2>${K("논문들이 한목소리로 말하는 관계", "Relations papers agree on")}</h2><p class="hint">${h1}</p>
-      <div class="scroll" id="cons">${pairTable(d.consensus.slice(0, 40), mc)}</div></div>
+      <div class="scroll" id="cons">${pairTable(d.consensus.slice(0, 40), mc, true)}</div></div>
     <div class="box"><h2>${K("논문끼리 부딪히는 관계 (논쟁 중)", "Relations papers disagree on")}</h2><p class="hint">${h2}</p>
-      <div class="scroll" id="contra">${pairTable(d.contradictions.slice(0, 40), mc)}</div></div></div>
+      <div class="scroll" id="contra">${pairTable(d.contradictions.slice(0, 40), mc, true)}</div></div></div>
     <div class="box" id="ev"><h2>${K("근거 문장", "Evidence sentences")}</h2><p class="hint">${K("왼쪽 표에서 쌍을 고르면 여기에 원문 인용과 요약이 나옵니다.", "Pick a pair in a table to see the quoted source sentences here.")}</p></div>`;
   const pick = (rows, el) => el.onclick = e => { const t = e.target.closest("tr[data-i]"); if (!t) return; const p = rows[+t.dataset.i];
-    $("ev").innerHTML = `<h2><i>${esc(p.taxon)}</i> · ${esc(dx(p.disease, p.disease_label))}</h2><p class="hint">${K("증가", "increase")} ${p.inc} · ${K("감소", "decrease")} ${p.dec} · ${K("차이 없음", "no difference")} ${p.null} · ${K("논문", "papers")} ${p.papers}</p>
+    $("ev").innerHTML = `<h2><i>${esc(p.taxon)}</i> · ${esc(dx(p.disease, p.disease_label))}</h2><p class="hint">${K("증가", "increase")} ${p.inc} · ${K("감소", "decrease")} ${p.dec} · ${K("차이 없음", "no difference")} ${p.null} · ${K("논문", "papers")} ${p.papers}${p.groups != null ? `<br>${K("독립 그룹", "independent groups")} ${fmt(p.groups)}${p.groups_increase != null ? ` (↑${fmt(p.groups_increase)} / ↓${fmt(p.groups_decrease)})` : ""} · ${K("연도", "years")} ${yrs(p)} · ${K("학술지", "journals")} ${fmt(p.journals)}${p.cited_share != null ? " · " + K("인용된 비율", "cited share") + " " + pc(p.cited_share, 0) : ""} ${robustB(p.robust)}` : ""}</p>
       <div class="row2">${(p.examples || []).map(quoteCard).join("") || `<p class="hint">${K("상위 40개만 예시 문장을 미리 계산합니다.", "Example sentences are precomputed for the top 40 only.")}</p>`}</div>`; };
   pick(d.consensus, $("cons")); pick(d.contradictions, $("contra"));
 }
@@ -471,6 +483,281 @@ function inovel(d, pane) {
     <div class="box" id="ev"><h2>${K("근거 문장", "Evidence sentences")}</h2></div>`;
   $("nv").onclick = e => { const t = e.target.closest("tr[data-i]"); if (!t) return; const p = d.novel[+t.dataset.i];
     $("ev").innerHTML = `<h2><i>${esc(p.taxon)}</i> · ${esc(dx(p.disease, p.disease_label))}</h2><div class="row2">${(p.examples || []).map(quoteCard).join("")}</div>`; };
+}
+
+/* ---------------- insight lab: evidence sections (reversal, quality, clinic, severity) ----------------
+   Every key (reversal, evidence_quality, translation_gap, severity, risk, mechanism_triangles, resolution, trials, industry,
+   caveats_sections, labels_ko_sections) may be missing or null in older data: each block then shows a short note or is left out. */
+// labels for the new categorical values: data first (labels_ko_sections / labels_en), else these defaults [ko, en]
+const SECDEF = {
+  reversal_direction: {restore: ["회복 (줄어든 미생물 올리기)", "Restore (raise a depleted taxon)"], suppress: ["억제 (늘어난 미생물 낮추기)", "Suppress (lower an enriched taxon)"]},
+  quadrant: {opportunity: ["기회", "Opportunity"], crowded: ["경쟁 과열", "Crowded"], speculative: ["근거 약함", "Speculative"], early: ["초기", "Early"]},
+  subgroup_kind: {response: ["치료 반응", "Treatment response"], recurrence: ["재발·관해", "Relapse / remission"], survival: ["생존·예후", "Survival / prognosis"], severity: ["중증도·병기", "Severity / stage"], other: ["기타", "Other"]},
+  translation_state: {gap: ["동물만", "Animal only"], confirmed: ["사람에서 확인", "Confirmed in humans"], discordant: ["사람에서 반대", "Opposite in humans"], pending: ["사람 자료 부족", "Too little human data"]}};
+const slab = (cat, id) => { const def = (SECDEF[cat] || {})[id];
+  if (lang === "ko") return (((INS || {}).labels_ko_sections || {})[cat] || {})[id] || (def ? def[0] : id);
+  return nm(EN(cat)[id] || (def ? def[1] : id)); };
+const iv = (id, ko) => lang === "ko" ? (ko || EN("intervention")[id] || id) : nm(cap(EN("intervention")[id] || id));
+const mt = (id, ko) => lang === "ko" ? (ko || EN("metabolite")[id] || id) : nm(cap(EN("metabolite")[id] || id));
+// section caveat from the data (ko/en; Italian and French through the dictionaries)
+const secCav = key => { const c = ((INS || {}).caveats_sections || {})[key]; if (!c) return "";
+  const t = lang === "ko" ? (c.ko || c.en) : lang === "en" ? (c.en || "") : (c[lang] || xlate(c.en || ""));
+  return t ? `<p class="cav"><b>!</b> ${esc(t)}</p>` : ""; };
+// short English notes written by the engine; Korean here, Italian and French through the dictionaries
+const NOTE_KO = {"strain designation = culture-collection number (DSM, ATCC, ...) or 'strain X' in the sentence": "균주 표기 = 문장에 배양 기관 번호(DSM, ATCC 등)나 'strain X'가 있음"};
+const noteT = en => !en ? "" : lang === "ko" ? (NOTE_KO[en] || en) : lang === "en" ? en : xlate(en);
+const bdg = (t, cls, tip) => `<span class="bdg ${cls || ""}"${tip ? ` data-tip="${esc(tip)}"` : ""}>${t}</span>`;
+const pc = (v, dg) => v == null ? "—" : (v * 100).toFixed(dg == null ? 1 : dg) + "%";
+const yrs = q => q && q.first_year ? (q.first_year === q.last_year ? String(q.first_year) : q.first_year + "–" + q.last_year) : "—";
+const qline = q => q ? `${K("논문", "papers")} ${fmt(q.papers)} · ${K("독립 그룹", "independent groups")} ${fmt(q.groups)} · ${K("연도", "years")} ${yrs(q)} · ${K("학술지", "journals")} ${fmt(q.journals)}${q.cited_share != null ? " · " + K("인용된 비율", "cited share") + " " + pc(q.cited_share, 0) : ""}` : "";
+const robustB = r => r ? bdg(K("독립 재현", "replicated"), "ok", K("독립 그룹 3개 이상, 3년 이상에 걸쳐 보고", "Reported by ≥3 independent author groups over ≥3 years")) : "";
+const qcard = (x, extra) => `<div class="paper"><div class="find">“${esc(x.quote)}”</div><div class="meta"><span>${esc(x.year || "")}${extra ? " · " + extra : ""}</span>${pm(x)}</div></div>`;
+const noData = (title, msg) => `<div class="box"><h2>${title}</h2><p class="hint">${msg}</p></div>`;
+const NODATA = () => K("이 자료에는 아직 이 분석이 없습니다. 다음 지식 그래프 재생성 후에 나타납니다.", "This analysis is not in the current data yet. It appears after the next knowledge-graph rebuild.");
+const opt = (v, t, n) => `<option value="${esc(v)}">${esc(t)}${n != null ? " (" + n + ")" : ""}</option>`;
+const arrow = s => s === "lower" || s === "decrease" ? "↓" : "↑";
+const narrow = () => (window.innerWidth || 1200) < 640;      // phone width: smaller chart margins
+
+/* 1. reversal candidates */
+function irev(d, pane) {
+  const title = K("되돌리기 후보: 질병에서 바뀐 미생물을 되돌리는 개입", "Reversal candidates: interventions that push a disease-shifted microbe back");
+  const R = d.reversal || [];
+  if (!R.length) { pane.innerHTML = noData(title, d.reversal ? K("조건을 넘은 후보가 아직 없습니다.", "No candidate passes the thresholds yet.") : NODATA()); return; }
+  const h = V({eli10: ["어떤 병에서는 몸속 세균이 너무 줄거나 너무 늘어요. 다른 논문들은 어떤 방법(유산균, 식단 등)이 그 세균을 다시 늘리거나 줄인다고 해요. 두 가지를 이어 붙여 '이걸 시험해 보면 어떨까?' 하는 아이디어를 만든 거예요. 치료법이 아니에요.",
+      "In some illnesses a germ drops too low or grows too much. Other papers say some treatment (probiotics, diet…) raises or lowers that germ. We join the two into ideas worth testing. These are not treatments."],
+    eli20: ["질병 문헌(이 질병에서 미생물이 감소/증가)과 개입 문헌(이 개입이 그 미생물을 증가/감소)을 이어 붙인 가설입니다. 행을 누르면 양쪽 근거 문장을 봅니다. '이미 시험됨'은 이 질병을 언급한 개입 논문 수입니다.",
+      "Hypotheses joining two literatures: the condition papers (microbe lower/higher in the condition) and the intervention papers (the intervention raises/lowers that microbe). Click a row for both sides' evidence. 'Already tested' counts intervention papers that also mention the condition."],
+    pro: ["점수 = 질병 다수 방향 표·비율과 개입 다수 방향 논문·비율의 결합(논쟁 쌍은 0.5배), 문 수준 제외, 질병당 6·미생물당 5·전체 60개 상한 · 개입 쪽은 사람 숙주 문장만 · 재현 = 질병 쪽 독립 그룹 ≥3·기간 ≥3년이고 개입 쪽 그룹 ≥2",
+      "Score combines the condition-side majority votes and ratio with the intervention-side majority papers and ratio (contested pairs ×0.5); phylum excluded; capped at 6 per condition, 5 per microbe, 60 overall · intervention side uses human-host sentences only · replicated = condition side ≥3 independent groups over ≥3 years and intervention side ≥2 groups"]});
+  const cnt = {}; R.forEach(r => cnt[r.disease] = (cnt[r.disease] || 0) + 1);
+  const dis = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
+  const dl = id => { const r = R.find(x => x.disease === id); return dx(id, r && r.disease_label); };
+  pane.innerHTML = `<div class="box"><h2>${title}</h2><p class="hint">${h}</p>${secCav("reversal")}
+      <div class="ctl"><label>${K("질병", "Condition")} <select id="rvdis">${opt("", K("전체", "All"), R.length)}${dis.map(k => opt(k, dl(k), cnt[k])).join("")}</select></label>
+      <label class="chk"><input type="checkbox" id="rvrob"> ${K("독립 재현된 것만", "Replicated only")}</label>
+      <span class="legend"><i style="background:${C.amber}"></i>${K("질병", "Condition")} <i style="background:${DOWN}"></i>${K("질병에서 감소", "lower in condition")} <i style="background:${UP}"></i>${K("질병에서 증가", "higher in condition")} <i style="background:${C.teal}"></i>${esc(slab("reversal_direction", "restore"))} <i style="background:${C.coral}"></i>${esc(slab("reversal_direction", "suppress"))}</span></div>
+      <div class="mid" id="rvsk" style="height:480px"></div></div>
+    <div class="row2"><div class="box"><h2>${K("후보 목록", "Candidate list")}</h2><p class="hint">${K("점수 순 · 행을 누르면 오른쪽에 양쪽 근거", "Ranked by score · click a row for both sides' evidence")}</p><div class="scroll" id="rvt"></div></div>
+      <div class="box" id="rvev"><h2>${K("근거 문장", "Evidence sentences")}</h2><p class="hint">${K("목록에서 후보를 고르세요.", "Pick a candidate in the list.")}</p></div></div>`;
+  let rows = R;
+  const detail = r => { const a = r.disease_leg || {}, b = r.intervention_leg || {};
+    $("rvev").innerHTML = `<h2>${esc(dl(r.disease))} · <i>${esc(r.taxon)}</i> · ${esc(iv(r.intervention, r.intervention_label))}</h2>
+      <p class="hint">${esc(slab("reversal_direction", r.direction))} · ${K("점수", "score")} ${fmt(r.score)} ${robustB(r.robust)}${r.possibly_administered ? " " + bdg("⚠ " + K("투여한 균 자체일 수 있음", "may be the administered microbe"), "warn") : ""}${r.contested ? " " + bdg(K("논쟁 중", "contested"), "warn") : ""}</p>
+      <h3 class="leg">1 · ${K("질병 쪽", "Condition side")}: <i>${esc(r.taxon)}</i> ${arrow(a.taxon_in_disease)} ${a.taxon_in_disease === "lower" ? K("이 질병에서 감소", "lower in the condition") : K("이 질병에서 증가", "higher in the condition")}</h3>
+      <p class="hint">${K("감소", "decrease")} ${fmt(a.decrease)} · ${K("증가", "increase")} ${fmt(a.increase)} · ${K("차이 없음", "no difference")} ${fmt(a.null)}<br>${qline(a.quality)}</p>
+      ${(a.examples || []).map(x => qcard(x)).join("") || `<p class="hint">—</p>`}
+      <h3 class="leg">2 · ${K("개입 쪽", "Intervention side")}: ${esc(iv(r.intervention, r.intervention_label))} ${arrow(b.effect)} <i>${esc(r.taxon)}</i></h3>
+      <p class="hint">${K("증가", "increase")} ${fmt(b.increase_papers)} · ${K("감소", "decrease")} ${fmt(b.decrease_papers)} · ${K("논문", "papers")} ${fmt(b.papers)}<br>${qline(b.quality)}</p>
+      ${(b.examples || []).map(x => qcard(x)).join("") || `<p class="hint">—</p>`}
+      ${r.already_tested ? `<p class="hint">${K("이 질병을 함께 언급한 개입 논문", "Intervention papers that also mention this condition")}: ${fmt(r.already_tested)} (${K("같은 방향", "same direction")} ${fmt(r.already_tested_same_direction)})</p>` : ""}
+      <p class="cav"><b>!</b> ${K("가설입니다. 두 문헌을 이어 붙였을 뿐 이 개입이 이 질병에서 효과가 있다는 근거가 아닙니다.", "A hypothesis: two literatures joined, not evidence that this intervention works in this condition.")}</p>`; };
+  const table = () => { $("rvt").innerHTML = `<table><thead><tr><th>#</th><th>${K("질병", "Condition")}</th><th>${K("미생물", "Microbe")}</th><th>${K("질병에서", "In condition")}</th><th>${K("개입 · 효과", "Intervention · effect")}</th><th>${K("표시", "Flags")}</th><th class="n">${K("점수", "Score")}</th></tr></thead><tbody>${rows.map((r, i) => { const a = r.disease_leg || {}, b = r.intervention_leg || {};
+      return `<tr class="click" data-r="${i}"><td class="rank">${i + 1}</td><td>${esc(dl(r.disease))}</td><td><i>${esc(r.taxon)}</i></td>
+        <td style="color:${a.taxon_in_disease === "lower" ? DOWN : UP}">${arrow(a.taxon_in_disease)} <small>${fmt(a.taxon_in_disease === "lower" ? a.decrease : a.increase)}/${fmt((a.increase || 0) + (a.decrease || 0) + (a.null || 0))}</small></td>
+        <td><span style="color:${r.direction === "restore" ? C.teal : C.coral}">${esc(iv(r.intervention, r.intervention_label))} ${arrow(b.effect)}</span> <small>${fmt(b.effect === "decrease" ? b.decrease_papers : b.increase_papers)}/${fmt(b.papers)}</small></td>
+        <td class="flags">${robustB(r.robust)}${r.already_tested ? bdg(K("이미 시험됨", "already tested") + " " + fmt(r.already_tested), "info", K("이 질병을 함께 언급한 개입 논문 수", "Intervention papers that also mention this condition")) : ""}${r.possibly_administered ? bdg("⚠ " + K("투여 균?", "administered?"), "warn", K("개입 자체가 이 미생물을 넣는 것일 수 있습니다(예: 유산균 제제). 되돌림의 증거가 아닐 수 있습니다.", "The intervention may itself contain this microbe (e.g. a Lactobacillus product); not necessarily evidence of reversal.")) : ""}${r.contested ? bdg(K("논쟁", "contested"), "warn") : ""}</td>
+        <td class="n">${fmt(r.score)}</td></tr>`; }).join("")}</tbody></table>`;
+    if (rows.length) detail(rows[0]); else $("rvev").innerHTML = `<h2>${K("근거 문장", "Evidence sentences")}</h2><p class="hint">${K("조건에 맞는 후보가 없습니다.", "No candidate matches the filter.")}</p>`; };
+  const sankey = () => { charts.splice(0).forEach(c => c.dispose());
+    const top = rows.slice(0, 30), L = {}, N = {}, nodes = [];
+    const node = (id, name, color) => { if (!N[id]) { N[id] = name; nodes.push({name: id, itemStyle: {color}}); } };
+    top.forEach(r => { const D = "D:" + r.disease, T = "T:" + r.taxon, I = "I:" + r.intervention;
+      node(D, dl(r.disease), C.amber); node(T, r.taxon, r.disease_leg && r.disease_leg.taxon_in_disease === "lower" ? DOWN : UP); node(I, iv(r.intervention, r.intervention_label), C.violet);
+      const k1 = D + ">" + T, k2 = T + ">" + I;
+      L[k1] = L[k1] || {source: D, target: T, value: 0, lineStyle: {color: "gradient", opacity: .35}}; L[k1].value += +r.score || 0;
+      L[k2] = L[k2] || {source: T, target: I, value: 0, lineStyle: {color: r.direction === "restore" ? C.teal : C.coral, opacity: .45}}; L[k2].value += +r.score || 0; });
+    if (!nodes.length) return;
+    chart("rvsk", {tooltip: {formatter: p => p.dataType === "edge" ? `${esc(N[p.data.source])} → ${esc(N[p.data.target])}<br>${K("점수 합", "score sum")} ${(+p.data.value).toFixed(1)}` : esc(N[p.name] || p.name)},
+      series: [{type: "sankey", left: 6, right: narrow() ? 96 : 150, top: 10, bottom: 10, nodeGap: 6, nodeWidth: 12, draggable: false, emphasis: {focus: "adjacency"}, data: nodes, links: Object.values(L),
+        label: {color: C.text, fontSize: 11, formatter: p => N[p.name] || p.name}, lineStyle: {curveness: .5}}]}); };
+  const apply = () => { const k = $("rvdis").value, rob = $("rvrob").checked; rows = R.filter(r => (!k || r.disease === k) && (!rob || r.robust)); table(); sankey(); };
+  $("rvdis").onchange = apply; $("rvrob").onchange = apply;
+  $("rvt").onclick = e => { const t = e.target.closest("tr[data-r]"); if (!t) return; document.querySelectorAll("#rvt tr").forEach(x => x.classList.toggle("sel", x === t)); detail(rows[+t.dataset.r]); };
+  apply();
+}
+
+/* 2. evidence quality: replication, publication bias, animal -> human, taxonomic resolution */
+const ETYPE = {ASSOCIATED: ["미생물–질병 연관", "Microbe–condition association"], MODULATES: ["개입이 미생물을 바꿈", "Intervention changes a microbe"],
+  RISK: ["위험·유전 연관", "Risk or genetic association"], SUBGROUP: ["하위 집단 (중증도·반응)", "Subgroup (severity, response)"], BACKGROUND: ["배경 진술", "Background statement"]};
+function iqual(d, pane) {
+  const EQ = d.evidence_quality, TG = d.translation_gap, RS = d.resolution;
+  if (!EQ && !TG && !RS) { pane.innerHTML = noData(K("근거 품질", "Evidence quality"), NODATA()); return; }
+  const S = (EQ || {}).summary || {}, PB = (EQ || {}).publication_bias;
+  const h = V({eli10: ["좋은 근거는 서로 모르는 여러 연구팀이 여러 해에 걸쳐 같은 결과를 낸 거예요. 여기서는 그런 근거가 얼마나 되는지, '차이 없음' 결과가 숨겨지지는 않았는지, 동물 실험 결과가 사람에게도 맞는지 봐요.",
+      "Good evidence means several unrelated teams found the same thing over several years. Here we check how much evidence is like that, whether 'no difference' results go missing, and whether animal results hold in people."],
+    eli20: ["재현 = 공저자를 공유하지 않는 독립 그룹 수와 보고 기간 · 출판 편향 = '차이 없음' 보고 비율 · 동물→사람 = 동물에서 본 개입 효과가 사람 문장에서 같은 방향인지 · 해상도 = 종 이름까지 쓴 관계의 비율",
+      "Replication = independent author groups (no shared author) and the span of years · publication bias = share of 'no difference' reports · animal → human = whether an intervention effect seen in animals points the same way in human sentences · resolution = share of relations naming a species"],
+    pro: ["독립 그룹 = 저자(ORCID 또는 이름) 공유 논문의 연결 요소, 이름만으로 50편 넘게 잇는 허브 이름은 2편 이상 공유할 때만 연결 · 재현 기준: 그룹 ≥3, 기간 ≥3년 · 무효 비율 = null 방향 문장/전체 · 질병별은 간선 ≥50만",
+      "Independent groups = connected components of papers sharing an author (ORCID or name); name-only hubs linking >50 papers connect only with ≥2 shared names · replicated: ≥3 groups over ≥3 years · null share = null-direction sentences / all · per condition only with ≥50 edges"]});
+  const kpi = (v, t) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`;
+  let html = `<div class="box"><h2>${K("근거 품질: 이 결과를 얼마나 믿을 수 있나", "Evidence quality: how far can these results be trusted?")}</h2><p class="hint">${h}</p>${secCav("evidence_quality")}</div>`;
+  if (EQ) html += `<div class="kpis">${kpi(`${fmt(S.consensus_robust)}<small>/${fmt(S.consensus)}</small>`, K("독립 재현된 합의 관계", "Consensus relations independently replicated"))}
+      ${kpi(`${fmt(S.contradictions_both_sides_replicated)}<small>/${fmt(S.contradictions)}</small>`, K("양쪽 방향 모두 2개 이상 그룹이 보고한 논쟁", "Debates where both directions come from ≥2 groups"))}
+      ${kpi(`${fmt(S.reversal_robust)}<small>/${fmt(S.reversal)}</small>`, K("독립 재현된 되돌리기 후보", "Reversal candidates independently replicated"))}</div>`;
+  if (PB) html += `<div class="row2"><div class="box"><h2>${K("출판 편향: '차이 없음' 보고 비율", "Publication bias: share of 'no difference' reports")}</h2><p class="hint">${K("근거 문장 종류별 · 낮을수록 '차이 없음' 결과가 초록에 덜 실림", "By kind of evidence sentence · lower = 'no difference' results appear less in abstracts")}</p>${secCav("publication_bias")}<div class="mid" id="pbt" style="height:260px"></div></div>
+      <div class="box"><h2>${K("질병별 '차이 없음' 비율", "'No difference' share by condition")}</h2><p class="hint">${K("미생물–질병 간선이 다음 이상인 질병", "Conditions with at least this many microbe–condition edges")}: ${fmt(PB.min_edges_per_disease)} · ${K("막대 = 비율, 숫자 = 간선 수", "bar = share, label = edges")}</p><div class="mid" id="pbd" style="height:520px"></div></div></div>`;
+  if (TG) html += `<div class="row2"><div class="box"><h2>${K("동물 → 사람: 개입 효과가 사람에서도 같은가", "Animal → human: does the intervention effect hold in people?")}</h2>
+      <p class="hint">${V({eli10: ["쥐에서 본 효과가 사람에서도 보였는지 세어 봤어요.", "We counted whether effects seen in mice were also seen in people."], eli20: ["동물 문장에서 같은 방향 ≥3편인 개입→미생물 효과를 사람 문장과 비교", "Intervention → microbe effects with ≥3 same-direction animal papers, compared with human sentences"], pro: ["동물 ≥3편·비율 ≥2, 사람 확인 ≥2편 · 사람 = 제목과 문장에 동물·실험 모델이 없는 문장", "Animal ≥3 papers and ratio ≥2; human confirmation ≥2 papers · human = no animal or laboratory model named in the title or sentence"]})}</p>${secCav("translation_gap")}
+      <div class="scroll" style="max-height:360px"><table><thead><tr><th>${K("개입", "Intervention")}</th>${["confirmed", "discordant", "gap", "pending"].map(s => `<th class="n">${esc(slab("translation_state", s))}</th>`).join("")}</tr></thead><tbody>
+      ${Object.entries(TG.per_intervention || {}).map(([k, v]) => `<tr><td>${esc(iv(k))}</td><td class="n" style="color:${C.teal}">${fmt(v.confirmed)}</td><td class="n" style="color:${C.coral}">${fmt(v.discordant)}</td><td class="n" style="color:${C.amber}">${fmt(v.gap)}</td><td class="n">${fmt(v.pending)}</td></tr>`).join("")}
+      ${TG.totals ? `<tr><td><b>${K("합계", "Total")}</b></td><td class="n"><b>${fmt(TG.totals.confirmed)}</b></td><td class="n"><b>${fmt(TG.totals.discordant)}</b></td><td class="n"><b>${fmt(TG.totals.gap)}</b></td><td class="n"><b>${fmt(TG.totals.pending)}</b></td></tr>` : ""}</tbody></table></div>
+      ${level === "pro" && TG.animal_edges != null ? `<p class="hint">${K("동물 간선", "Animal edges")} ${fmt(TG.animal_edges)} · ${K("동물 의심 간선", "suspected-animal edges")} ${fmt(TG.animal_suspect_edges)}</p>` : ""}</div>
+    <div class="box"><h2>${K("사람에서 반대 또는 동물에서만", "Opposite in humans, or animal only")}</h2><p class="hint">${K("행을 누르면 근거 문장", "Click a row for the evidence")}</p><div class="seg" id="tgs">${["discordant", "gap", "confirmed"].map((s, i) => `<button data-k="${s}" class="${i ? "" : "on"}">${esc(slab("translation_state", s))} (${(TG[s] || []).length})</button>`).join("")}</div>
+      <div class="scroll" style="max-height:300px" id="tgt"></div><div id="tge"></div></div></div>`;
+  if (RS) html += `<div class="row2"><div class="box"><h2>${K("해상도: 종·균주 이름까지 쓰는 비율", "Resolution: share naming a species or strain")}</h2><p class="hint">${K("연도별 미생물 관계 문장 중 종 이름을 쓴 비율과 균주 표기 비율", "Per year: share of microbe relation sentences naming a species, and naming a strain")}</p>${secCav("resolution")}<div class="mid" id="rsy"></div>${level === "pro" && RS.strain_note ? `<p class="hint">${esc(noteT(RS.strain_note))}</p>` : ""}</div>
+      <div class="box"><h2>${K("질병별 종 수준 비율", "Species-level share by condition")}</h2><p class="hint">${K("간선이 많은 질병 순", "Conditions with most edges first")}</p><div class="mid" id="rsd" style="height:520px"></div></div></div>`;
+  pane.innerHTML = html;
+  const hbar = (el, names, vals, color, label) => chart(el, {grid: {left: narrow() ? 100 : 150, right: 56, top: 6, bottom: 20}, tooltip: {formatter: p => `${esc(names[p.dataIndex])}<br>${label(p.dataIndex)}`},
+    xAxis: {type: "value", axisLabel: {color: C.dim, formatter: v => (v * 100).toFixed(1) + "%"}, splitLine: {lineStyle: {color: C.line}}},
+    yAxis: {type: "category", inverse: true, data: names, axisLabel: {color: C.text, fontSize: 11, width: narrow() ? 92 : 140, overflow: "truncate"}},
+    series: [{type: "bar", data: vals, itemStyle: {color, borderRadius: [0, 6, 6, 0]}, label: {show: true, position: "right", color: C.muted, fontSize: 10, formatter: p => label(p.dataIndex, true)}}]});
+  if (PB) {
+    const T = Object.entries(PB.by_type || {}).sort((a, b) => b[1].edges - a[1].edges);
+    if (T.length) hbar("pbt", T.map(([k]) => ETYPE[k] ? K(...ETYPE[k]) : k), T.map(([, v]) => v.null_share), C.amber, (i, s) => s ? pc(T[i][1].null_share) : `${K("간선", "edges")} ${fmt(T[i][1].edges)} · ${K("차이 없음", "no difference")} ${fmt(T[i][1].null)} (${pc(T[i][1].null_share, 2)})`);
+    const P = (PB.per_disease || []).slice(0, 30);
+    if (P.length) hbar("pbd", P.map(x => dx(x.disease, x.label)), P.map(x => x.null_share), C.sky, (i, s) => s ? fmt(P[i].edges) : `${K("간선", "edges")} ${fmt(P[i].edges)} · ${K("차이 없음", "no difference")} ${fmt(P[i].null)} (${pc(P[i].null_share, 2)})`);
+  }
+  if (TG) {
+    const tgt = $("tgt"), tge = $("tge");                      // kept, so a click on a stale control never reaches another pane
+    const list = key => { const L = TG[key] || [];
+      tgt.innerHTML = L.length ? `<table><thead><tr><th>${K("개입", "Intervention")}</th><th>${K("미생물", "Microbe")}</th><th>${K("동물", "Animal")}</th><th>${K("사람: 같은 방향 / 반대", "Human: same / opposite")}</th></tr></thead><tbody>${L.map((x, i) => `<tr class="click" data-g="${i}"><td>${esc(iv(x.intervention, x.intervention_label))}</td><td><i>${esc(x.taxon)}</i></td><td>${arrow(x.animal_direction)} ${fmt(x.animal_papers)}${x.animal_opposite ? ` <small>(${K("반대", "opposite")} ${fmt(x.animal_opposite)})</small>` : ""}</td><td><span style="color:${C.teal}">${fmt(x.human_same)}</span> / <span style="color:${C.coral}">${fmt(x.human_opposite)}</span> <small>${K("사람 논문", "human papers")} ${fmt(x.human_papers)}</small></td></tr>`).join("")}</tbody></table>` : `<p class="hint">—</p>`;
+      tge.innerHTML = "";
+      tgt.onclick = e => { const t = e.target.closest("tr[data-g]"); if (!t) return; const x = L[+t.dataset.g];
+        tgt.querySelectorAll("tr").forEach(y => y.classList.toggle("sel", y === t));
+        tge.innerHTML = `<p class="hint"><b>${esc(iv(x.intervention, x.intervention_label))} ${arrow(x.animal_direction)} <i>${esc(x.taxon)}</i></b></p>` + (x.examples || []).map(q => qcard(q, q.host === "animal" ? K("동물", "animal") : q.host === "human" ? K("사람", "human") : "")).join(""); }; };
+    $("tgs").onclick = e => { const b = e.target.closest("button"); if (!b) return; document.querySelectorAll("#tgs button").forEach(y => y.classList.toggle("on", y === b)); list(b.dataset.k); };
+    list("discordant");
+  }
+  if (RS) {
+    const Y = RS.species_share_by_year || [], ST = {}; (RS.strain || []).forEach(x => ST[x.year] = x.share);
+    if (Y.length) chart("rsy", {grid: {left: 50, right: 20, top: 30, bottom: 30}, legend: {top: 0, textStyle: {color: C.muted}},
+      tooltip: {trigger: "axis", formatter: ps => `${ps[0].axisValue}<br>` + ps.map(p => `${p.marker}${esc(p.seriesName)} ${pc(p.value)}`).join("<br>") + `<br>${K("간선", "edges")} ${fmt((Y[ps[0].dataIndex] || {}).edges)}`},
+      xAxis: {type: "category", data: Y.map(x => x.year), axisLabel: {color: C.muted}}, yAxis: {axisLabel: {color: C.dim, formatter: v => (v * 100).toFixed(0) + "%"}, splitLine: {lineStyle: {color: C.line}}},
+      series: [{type: "line", name: K("종 이름", "Species named"), data: Y.map(x => x.species_share), smooth: true, symbolSize: 6, lineStyle: {width: 3, color: C.teal}, itemStyle: {color: C.teal}, areaStyle: {opacity: .08}},
+        {type: "line", name: K("균주 표기", "Strain designated"), data: Y.map(x => ST[x.year] ?? null), smooth: true, symbolSize: 5, lineStyle: {width: 2, color: C.violet, type: "dashed"}, itemStyle: {color: C.violet}}]});
+    const P = (RS.per_disease || []).slice(0, 25);
+    if (P.length) hbar("rsd", P.map(x => dx(x.disease, x.label)), P.map(x => x.species_share), C.teal, (i, s) => s ? pc(P[i].species_share, 0) : `${K("간선", "edges")} ${fmt(P[i].edges)} · ${K("종 수준", "species level")} ${pc(P[i].species_share)}`);
+  }
+}
+
+/* 3. from evidence to clinic: registered trials (ClinicalTrials.gov) and the curated industry record */
+const PHASE = {early: ["초기 (1상)", "Early (phase 1)"], mid: ["2상", "Phase 2"], late: ["3·4상", "Phase 3–4"], na: ["해당 없음", "Not applicable"]};
+const PHCOL = {early: C.sky, mid: C.amber, late: C.teal, na: C.dim};
+const QCOL = {opportunity: C.lime, crowded: C.amber, speculative: C.coral, early: C.dim};
+const CTSTAT = {RECRUITING: ["모집 중", "Recruiting"], NOT_YET_RECRUITING: ["모집 전", "Not yet recruiting"], ACTIVE_NOT_RECRUITING: ["진행 중 (모집 종료)", "Active, not recruiting"],
+  ENROLLING_BY_INVITATION: ["초청 모집", "Enrolling by invitation"], COMPLETED: ["완료", "Completed"], TERMINATED: ["중단", "Terminated"], WITHDRAWN: ["철회", "Withdrawn"],
+  SUSPENDED: ["일시 중지", "Suspended"], UNKNOWN: ["상태 미상", "Unknown status"], AVAILABLE: ["사용 가능", "Available"]};
+const ctStat = s => { const k = String(s || "").toUpperCase().replace(/[\s,-]+/g, "_"); return CTSTAT[k] ? K(...CTSTAT[k]) : esc(s || "—"); };
+const ctPhase = ph => (ph || []).map(p => { const s = String(p).toUpperCase().replace(/[\s_]/g, "");
+  return s === "NA" ? K("해당 없음", "N/A") : s === "EARLYPHASE1" ? K("초기 1상", "Early phase 1") : /^PHASE\d$/.test(s) ? K(s.slice(5) + "상", "Phase " + s.slice(5)) : esc(p); }).join(" / ") || "—";
+const MODAL = {fmt: ["분변 미생물", "Fecal microbiota"], lbp: ["생균 치료제", "Live biotherapeutic"], probiotic: ["프로바이오틱스", "Probiotics"], prebiotic: ["프리바이오틱스·글리칸", "Prebiotic / glycan"],
+  synbiotic: ["신바이오틱스", "Synbiotics"], postbiotic: ["포스트바이오틱스", "Postbiotics"], phage: ["파지", "Phage"], diagnostics: ["진단", "Diagnostics"], consumer: ["소비자 제품", "Consumer product"]};
+const modal = m => MODAL[m] ? K(...MODAL[m]) : esc(m || "—");
+const ISTAT = {approved: ["승인", "Approved", "ok"], rejected: ["승인 거부", "Refused", "bad"], phase1: ["1상", "Phase 1", "info"], phase2: ["2상", "Phase 2", "info"], phase3: ["3상", "Phase 3", "info"],
+  discontinued: ["중단", "Discontinued", "bad"], active: ["활동 중", "Active", "ok"], closed: ["폐업", "Closed", "bad"], acquired: ["인수·라이선스", "Acquired / licensed", "warn"]};
+const istat = s => ISTAT[s] ? bdg(K(ISTAT[s][0], ISTAT[s][1]), ISTAT[s][2]) : bdg(esc(s || "—"), "");
+const EVKIND = e => e.kind === "product" ? (e.status === "rejected" ? ["승인 거부", "Refusal", C.coral] : ["승인", "Approval", C.teal])
+  : e.kind === "company" ? (e.status === "closed" ? ["폐업", "Closure", C.coral] : ["회사", "Company", C.sky])
+  : e.kind === "pipeline" ? (e.status === "discontinued" ? ["개발 중단", "Discontinued", C.coral] : ["개발 단계", "Milestone", C.sky])
+  : e.status === "acquired" ? ["거래", "Deal", C.amber] : e.status === "approved" ? ["승인", "Approval", C.teal] : /^phase/.test(e.status || "") ? ["결과 발표", "Readout", C.violet] : ["투자 유치", "Financing", C.lime];
+const itext = e => { const t = e.text || {}; return t[lang] || t.en || ""; };
+const isrc = e => `<div class="srcs">${esc(e.date || "")}${(e.sources || []).filter(s => s && /^https?:/.test(s.url || "")).map(s => ` · <a href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title || s.url)}">${esc(s.title && s.title.length > 70 ? s.title.slice(0, 68) + "…" : s.title || s.url)} ↗</a>`).join("")}</div>`;
+function iclinic(d, pane) {
+  const TR = d.trials, IN = d.industry, ent = ((IN || {}).entries || []).filter(e => e && e.verified !== false);
+  const cons = {}, rob = {}; (d.consensus || []).forEach(p => { cons[p.disease] = (cons[p.disease] || 0) + 1; if (p.robust) rob[p.disease] = (rob[p.disease] || 0) + 1; });
+  const evc = id => !id ? "" : cons[id] ? `<span class="chip" data-tip="${esc(K("이 질병의 합의 관계 수 (괄호: 독립 재현)", "Consensus relations for this condition (in brackets: independently replicated)"))}">${esc(dx(id))} · ${K("합의", "consensus")} ${cons[id]}${rob[id] ? ` (${rob[id]})` : ""}</span>` : `<span class="chip">${esc(dx(id))}</span>`;
+  const h = V({eli10: ["논문에서 찾은 것이 실제 치료로 이어지고 있는지 봐요. 병원에서 시험 중인 연구, 이미 허가받은 약, 그리고 문을 닫은 회사들이 남긴 교훈이에요.",
+      "Is what papers found turning into real treatments? Trials running in hospitals, products already approved, and lessons from companies that closed."],
+    eli20: ["근거가 강한데 임상시험이 적은 질병은 '기회', 둘 다 많으면 '경쟁 과열', 시험은 많은데 근거가 약하면 '근거 약함'입니다. 아래는 사람이 출처를 확인한 산업 기록입니다.",
+      "Conditions with strong evidence but few trials are 'opportunities', both high is 'crowded', many trials on weak evidence is 'speculative'. Below: industry records whose sources a person checked."],
+    pro: ["근거 = 독립 재현 합의 쌍 + 되돌리기 후보, 논쟁 쌍이 더 많으면 강함에서 제외 · 시험 활동 = 진행·완료 시험 가중합(1상·해당 없음 1, 2상 2, 3·4상 3) · 기준선은 0이 아닌 값의 중앙값과 최소값 중 큰 값",
+      "Evidence = replicated consensus pairs + reversal candidates; more contested pairs than that excludes 'strong' · trial activity = active + completed trials weighted (phase 1/NA 1, phase 2 = 2, phase 3/4 = 3) · cut-offs = max(minimum, median of non-zero values)"]});
+  let html = `<div class="box"><h2>${K("근거에서 임상·제품으로", "From evidence to clinic")}</h2><p class="hint">${h}</p></div>`;
+  const hasTR = TR && (TR.quadrant || []).length;
+  if (hasTR) {
+    html += `<div class="row2"><div class="box"><h2>${K("근거 × 임상시험 사분면", "Evidence × trial-activity quadrant")}</h2><p class="hint">${K("가로 = 근거, 세로 = 임상시험 활동", "x = evidence, y = trial activity")} · ${K("등록 시험", "registered trials")} ${fmt(TR.studies)}${TR.fetched_at ? " · " + K("수집", "fetched") + " " + esc(typeof TR.fetched_at === "number" ? new Date(TR.fetched_at * 1000).toISOString().slice(0, 10) : String(TR.fetched_at).slice(0, 10)) : ""}</p>${secCav("trials")}
+        <div class="legend">${["opportunity", "crowded", "speculative", "early"].map(q => `<i style="background:${QCOL[q]}"></i>${esc(slab("quadrant", q))} (${TR.quadrant.filter(x => x.quadrant === q).length})`).join(" ")}</div><div class="big" id="tq"></div></div>
+      <div class="box"><h2>${K("질병별 임상시험 단계", "Trial phases by condition")}</h2><p class="hint">${K("등록 시험 수 상위 질병", "Conditions with the most registered trials")}</p><div class="big" id="tph"></div></div></div>
+      <div class="box"><h2>${K("최근 등록된 임상시험", "Latest registered trials")}</h2><div class="ctl"><label>${K("질병", "Condition")} <select id="tdis"></select></label></div><div class="scroll" style="max-height:420px" id="tlist"></div></div>`;
+  } else {
+    html += `<div class="box"><h2>${K("임상시험 (ClinicalTrials.gov)", "Clinical trials (ClinicalTrials.gov)")}</h2><p class="note">${K("ClinicalTrials.gov에서 마이크로바이옴 임상시험을 모으는 중입니다. 다음 주간 수집 뒤에 첫 결과가 여기에 나타납니다.", "Collecting microbiome trials from ClinicalTrials.gov. The first results appear here after the next weekly fetch.")}</p></div>`;
+  }
+  let pipe = [];
+  if (ent.length) {
+    const by = k => ent.filter(e => e.kind === k), byDate = (a, b) => String(b.date || "").localeCompare(String(a.date || ""));
+    const prod = by("product").sort(byDate), comp = by("company"), PO = {phase3: 0, phase2: 1, phase1: 2, discontinued: 3};
+    pipe = by("pipeline").sort((a, b) => (PO[a.status] ?? 9) - (PO[b.status] ?? 9) || byDate(a, b));
+    const tl = ent.filter(e => e.kind === "event" || e.kind === "product" || (e.kind === "company" && e.status === "closed") || (e.kind === "pipeline" && e.status === "discontinued")).sort(byDate);
+    const card = e => `<div class="icard${e.status === "closed" ? " closed" : ""}"><div class="ih"><b>${esc(e.name)}</b>${istat(e.status)}</div><div class="isub">${esc(e.company || "")}${e.modality ? " · " + modal(e.modality) : ""}</div>
+      ${e.disease || e.indication ? `<div class="chips">${evc(e.disease)}${e.indication && level !== "eli10" ? `<span class="chip ind">${esc(e.indication)}</span>` : ""}</div>` : ""}<p>${e.status === "closed" ? `<b class="lesson">${K("교훈", "Lesson")}:</b> ` : ""}${esc(itext(e))}</p>${e.note && level === "pro" ? `<p class="inote">${K("정리자 메모", "Curator note")}: ${esc(e.note)}</p>` : ""}${isrc(e)}</div>`;
+    html += `<div class="box"><h2>${K("산업 기록: 사람이 출처를 확인한 항목", "Industry record: entries with checked sources")}</h2><p class="hint">${K("기준일", "As of")} ${esc(IN.as_of || "—")} · ${K("항목", "entries")} ${ent.length}${IN.dropped_unverified ? " · " + K("미확인 제외", "unverified left out") + " " + IN.dropped_unverified : ""}</p>${secCav("industry")}</div>
+      ${prod.length ? `<div class="box"><h2>${K("허가 심사를 거친 제품", "Products through regulatory review")}</h2><div class="cards">${prod.map(card).join("")}</div></div>` : ""}
+      <div class="row2">${pipe.length ? `<div class="box"><h2>${K("개발 중인 후보 (단계별)", "Pipeline by phase")}</h2><p class="hint">${K("행을 누르면 설명과 출처", "Click a row for the summary and sources")}</p><div class="scroll" style="max-height:560px"><table><thead><tr><th>${K("후보", "Candidate")}</th><th>${K("단계", "Phase")}</th><th>${K("적응증", "Indication")}</th><th>${K("날짜", "Date")}</th></tr></thead><tbody>
+        ${pipe.map((e, i) => `<tr class="click" data-p="${i}"><td class="name"><b>${esc(e.name)}</b><small>${esc(e.company || "")}${e.modality ? " · " + modal(e.modality) : ""}</small></td><td>${istat(e.status)}</td><td>${esc(e.indication || "")}<div class="chips">${evc(e.disease)}</div></td><td style="white-space:nowrap">${esc(e.date || "")}</td></tr>`).join("")}</tbody></table></div><div id="pdet"></div></div>` : ""}
+      ${tl.length ? `<div class="box"><h2>${K("타임라인 (최신 순)", "Timeline (newest first)")}</h2><p class="hint">${K("승인 · 결과 발표 · 거래 · 폐업 · 투자", "Approvals · readouts · deals · closures · financings")}</p><div class="scroll tl" style="max-height:640px">
+        ${tl.map(e => { const k = EVKIND(e); return `<div class="tli"><i style="background:${k[2]}"></i><div><small>${esc(e.date || "")} · <b style="color:${k[2]}">${K(k[0], k[1])}</b></small><div><b>${esc(e.name)}</b> <span class="isub">${esc(e.company || "")}</span></div><p>${esc(itext(e))}</p>${isrc(e)}</div></div>`; }).join("")}</div></div>` : ""}</div>
+      ${comp.length ? `<div class="box"><h2>${K("회사와 폐업이 남긴 교훈", "Companies, and lessons from closures")}</h2><p class="hint">${K("활동 중인 회사와 문을 닫은 회사 · 폐업 카드의 글이 교훈입니다", "Active and closed companies · the text on closed companies is the lesson")}</p>
+        <div class="cards">${comp.sort((a, b) => (a.status === "closed") - (b.status === "closed") || byDate(a, b)).map(card).join("")}</div></div>` : ""}`;
+  } else {
+    html += `<div class="box"><h2>${K("산업 기록", "Industry record")}</h2><p class="note">${K("확인된 산업 기록이 아직 없습니다.", "No verified industry entries yet.")}</p></div>`;
+  }
+  pane.innerHTML = html;
+  pane.querySelectorAll("tr[data-p]").forEach(t => t.onclick = () => { const e = pipe[+t.dataset.p]; if (!e) return;
+    pane.querySelectorAll("tr[data-p]").forEach(x => x.classList.toggle("sel", x === t));
+    $("pdet").innerHTML = `<div class="icard"><div class="ih"><b>${esc(e.name)}</b>${istat(e.status)}</div><p>${esc(itext(e))}</p>${e.note && level === "pro" ? `<p class="inote">${K("정리자 메모", "Curator note")}: ${esc(e.note)}</p>` : ""}${isrc(e)}</div>`; });
+  if (hasTR) {
+    const Q = TR.quadrant, cx = (TR.cutoffs || {}).evidence_high, cy = (TR.cutoffs || {}).activity_high;
+    const mx = Math.ceil(Math.max(...Q.map(x => x.evidence), (cx || 0) * 2, 1) * 1.1), my = Math.ceil(Math.max(...Q.map(x => x.trial_activity), (cy || 0) * 2, 1) * 1.1);
+    const area = (x0, x1, y0, y1, q) => [{xAxis: x0, yAxis: y0, itemStyle: {color: QCOL[q], opacity: .07}, label: {show: true, position: "insideTop", color: QCOL[q], fontSize: 12, fontWeight: 700, formatter: slab("quadrant", q)}}, {xAxis: x1, yAxis: y1}];
+    const cut = cx != null && cy != null;
+    chart("tq", {grid: {left: 56, right: 20, top: 16, bottom: 46}, tooltip: {formatter: p => { const x = Q[p.dataIndex]; return x && p.seriesType === "scatter" ? `<b>${esc(dx(x.disease, x.label))}</b> · ${esc(slab("quadrant", x.quadrant))}<br>${K("근거", "evidence")} ${x.evidence} (${K("재현 합의", "replicated consensus")} ${x.robust_pairs}, ${K("되돌리기", "reversal")} ${x.reversal_candidates}, ${K("논쟁", "contested")} ${x.contested_pairs})<br>${K("시험 활동", "trial activity")} ${x.trial_activity} · ${K("시험", "trials")} ${x.trials}` : ""; }},
+      xAxis: {name: K("근거", "Evidence"), nameLocation: "middle", nameGap: 26, min: 0, max: mx, axisLabel: {color: C.dim}, splitLine: {lineStyle: {color: C.line}}},
+      yAxis: {name: K("임상시험 활동", "Trial activity"), nameLocation: "middle", nameGap: 36, min: 0, max: my, axisLabel: {color: C.dim}, splitLine: {lineStyle: {color: C.line}}},
+      series: [{type: "scatter", data: Q.map(x => ({value: [x.evidence, x.trial_activity], name: dx(x.disease, x.label), itemStyle: {color: QCOL[x.quadrant] || C.muted}})),
+        symbolSize: v => 8 + Math.sqrt(Math.max(0, v[0] + v[1])) * 2, label: {show: true, position: "right", color: C.text, fontSize: 11, formatter: p => p.name}, labelLayout: {hideOverlap: true},
+        markArea: cut ? {silent: true, data: [area(cx, mx, 0, cy, "opportunity"), area(cx, mx, cy, my, "crowded"), area(0, cx, cy, my, "speculative"), area(0, cx, 0, cy, "early")]} : undefined,
+        markLine: cut ? {silent: true, symbol: "none", lineStyle: {color: C.muted, type: "dashed"}, label: {show: false}, data: [{xAxis: cx}, {yAxis: cy}]} : undefined}]});
+    const PD = Object.entries(TR.per_disease || {}).sort((a, b) => b[1].trials - a[1].trials).slice(0, 18);
+    if (PD.length) chart("tph", {grid: {left: narrow() ? 100 : 150, right: 30, top: 30, bottom: 20}, legend: {top: 0, textStyle: {color: C.muted}}, tooltip: {trigger: "axis", axisPointer: {type: "shadow"}},
+      xAxis: {type: "value", axisLabel: {color: C.dim}, splitLine: {lineStyle: {color: C.line}}}, yAxis: {type: "category", inverse: true, data: PD.map(([k, v]) => dx(k, v.label)), axisLabel: {color: C.text, fontSize: 11, width: 140, overflow: "truncate"}},
+      series: ["late", "mid", "early", "na"].map(p => ({type: "bar", stack: "ph", name: K(...PHASE[p]), data: PD.map(([, v]) => (v.phase || {})[p] || 0), itemStyle: {color: PHCOL[p]}}))});
+    const all = [];
+    Object.entries(TR.per_disease || {}).forEach(([k, v]) => (v.latest || []).forEach(s => all.push({...s, _d: k})));
+    const dkeys = Object.keys(TR.per_disease || {}).sort((a, b) => TR.per_disease[b].trials - TR.per_disease[a].trials);
+    $("tdis").innerHTML = opt("", K("전체", "All")) + dkeys.map(k => opt(k, dx(k, TR.per_disease[k].label), TR.per_disease[k].trials)).join("");
+    const tlist = k => { const seen = new Set(), L = all.filter(s => !k || s._d === k).sort((a, b) => String(b.start || "").localeCompare(String(a.start || ""))).filter(s => !seen.has(s.nct) && seen.add(s.nct)).slice(0, 25);
+      const P = k ? TR.per_disease[k] : null;
+      $("tlist").innerHTML = (P ? `<p class="hint">${K("시험", "trials")} ${fmt(P.trials)} · ${K("진행 중", "active")} ${fmt((P.status || {}).active)} · ${K("완료", "completed")} ${fmt((P.status || {}).completed)}${(P.top_sponsors || []).length ? " · " + K("주요 의뢰자", "top sponsors") + ": " + P.top_sponsors.slice(0, 3).map(s => esc(s.name) + " (" + s.trials + ")").join(", ") : ""}</p>` : "") +
+        (L.length ? `<table><thead><tr><th>NCT</th><th>${K("제목", "Title")}</th><th>${K("단계", "Phase")}</th><th>${K("상태", "Status")}</th><th>${K("시작", "Start")}</th><th>${K("의뢰자", "Sponsor")}</th></tr></thead><tbody>${L.map(s => `<tr><td><a href="https://clinicaltrials.gov/study/${encodeURIComponent(s.nct || "")}" target="_blank" rel="noopener">${esc(s.nct)} ↗</a></td><td>${esc(s.title)}<div class="chips">${evc(s._d)}${(s.modalities || []).map(m => `<span class="chip">${modal(m)}</span>`).join("")}</div></td><td>${ctPhase(s.phase)}</td><td>${ctStat(s.status)}</td><td style="white-space:nowrap">${esc(s.start || "—")}</td><td>${esc(s.sponsor || "—")}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">—</p>`); };
+    $("tdis").onchange = () => tlist($("tdis").value); tlist("");
+  }
+}
+
+/* 4. severity, risk, mechanisms */
+function isrm(d, pane) {
+  const SV = d.severity, RK = d.risk, MT = d.mechanism_triangles;
+  if (!SV && !RK && !MT) { pane.innerHTML = noData(K("중증도·위험·기전", "Severity, risk, mechanisms"), NODATA()); return; }
+  const h = V({eli10: ["같은 병이라도 더 심한 사람에게 많은 세균, 병에 걸릴 위험과 함께 나오는 세균, 그리고 세균과 함께 자주 이야기되는 물질을 모았어요. 모두 '함께 나온다'는 뜻이지 원인이라는 뜻은 아니에요.",
+      "Germs that are more common in people who are sicker, germs that go with a higher or lower risk of getting ill, and substances often mentioned with them. All of this means 'found together', not 'causes'."],
+    eli20: ["중증도 = 더 나쁜 하위 집단(중증·무반응·재발·짧은 생존)에서 많거나 적은 미생물 · 위험 = 발병 위험과의 연관(멘델 무작위분석 포함) · 기전 = 같은 초록에 함께 언급된 대사물질(측정된 경로가 아님)",
+      "Severity = microbes higher or lower in the worse subgroup (severe, non-responder, relapse, shorter survival) · risk = association with the risk of disease (including Mendelian randomization) · mechanisms = metabolites co-mentioned in the same abstracts (not a measured pathway)"],
+    pro: ["중증도·위험: 같은 방향 ≥3편·비율 ≥2 · 기전 삼각형: 합의 쌍 상위 30개 중 공동 언급 ≥10편, 대사물질 ≥5편, 향상도(lift) = 쌍 안 비율 ÷ 같은 질병 논문 전체 비율 ≥1.5, 쌍당 최대 3개",
+      "Severity and risk: ≥3 papers in one direction, ratio ≥2 · mechanism triangles: top 30 consensus pairs with ≥10 co-mentioning papers, metabolite ≥5 papers, lift = share within the pair ÷ share among all papers on the condition ≥1.5, at most 3 per pair"]});
+  const it = (x, dir, sub) => `<div class="sig"><b><i>${esc(x.taxon)}</i></b> · ${esc(dx(x.disease, x.disease_label))} <span style="color:${dir[1]}">${dir[0]}</span>
+    <small>${sub} · ${K("논문", "papers")} ${fmt(x.papers)}${x.opposite ? ` · ${K("반대", "opposite")} ${fmt(x.opposite)}` : ""}</small>
+    <details><summary>${K("근거 문장", "Evidence sentences")} (${(x.examples || []).length})</summary>${(x.examples || []).map(q => qcard(q)).join("")}</details></div>`;
+  let html = `<div class="box"><h2>${K("중증도·위험·기전: 연관을 넘어선 단서", "Severity, risk and mechanisms: clues beyond association")}</h2><p class="hint">${h}</p></div><div class="row2">`;
+  if (SV) html += `<div class="box"><h2>${K("더 나쁜 하위 집단에서 달라지는 미생물", "Microbes that differ in the worse subgroup")}</h2>${secCav("severity")}
+      ${(SV.items || []).length ? SV.items.map(x => it(x, x.in_worse_subgroup === "lower" ? ["↓ " + K("나쁜 쪽에서 감소", "lower when worse"), DOWN] : ["↑ " + K("나쁜 쪽에서 증가", "higher when worse"), UP], esc(slab("subgroup_kind", x.kind)))).join("") : `<p class="hint">—</p>`}
+      ${level === "pro" && SV.subgroup_edges != null ? `<p class="hint">${K("하위 집단 간선", "Subgroup edges")} ${fmt(SV.subgroup_edges)} · ${K("어느 쪽이 나쁜지 판정됨", "worse side resolved")} ${fmt(SV.polarity_resolved)}</p>` : ""}</div>`;
+  if (RK) html += `<div class="box"><h2>${K("발병 위험과 연관된 미생물", "Microbes associated with disease risk")}</h2>${secCav("risk")}
+      ${(RK.items || []).length ? RK.items.map(x => it(x, x.direction === "lower_risk" ? ["↓ " + K("위험 낮음", "lower risk"), C.teal] : ["↑ " + K("위험 높음", "higher risk"), C.coral], x.mendelian_share ? K("멘델 무작위분석", "Mendelian randomization") + " " + pc(x.mendelian_share, 0) : K("관찰 연관", "observational"))).join("") : `<p class="hint">—</p>`}</div>`;
+  html += `</div>`;
+  if (MT) html += `<div class="box"><h2>${K("기전 삼각형: 미생물 – 대사물질 – 질병 (공동 언급)", "Mechanism triangles: microbe – metabolite – condition (co-mention)")}</h2>
+    <p class="hint">${K("향상도 ×2 = 그 질병 논문 전체보다 이 미생물–질병 논문에서 그 대사물질이 두 배 자주 언급됨", "Lift ×2 = the metabolite is mentioned twice as often in papers on this microbe and condition as in all papers on the condition")}</p>${secCav("mechanism_triangles")}
+    <div class="cards">${(MT.items || []).map(x => `<div class="mcard"><div class="mh"><b><i>${esc(x.taxon)}</i></b> <span style="color:${x.taxon_direction === "lower" ? DOWN : UP}">${arrow(x.taxon_direction)}</span> ${esc(dx(x.disease, x.disease_label))}<small>${K("공동 언급 논문", "co-mentioning papers")} ${fmt(x.co_papers)}</small></div>
+      ${(x.metabolites || []).map(m => `<div class="mrow"><span>${esc(mt(m.metabolite, m.label))}</span><div class="bal"><i style="width:${Math.min(100, 20 * (+m.lift || 0))}%;background:${C.violet}"></i></div><b>×${(+m.lift || 0).toFixed(2)}</b><small>${K("논문", "papers")} ${fmt(m.papers)} · ${pc(m.share)} ${K("대", "vs")} ${pc(m.baseline_share)}</small></div>`).join("")}</div>`).join("") || `<p class="hint">—</p>`}</div></div>`;
+  pane.innerHTML = html;
 }
 
 document.addEventListener("mousemove", e => { const t = e.target.closest && e.target.closest("[data-tip]"), tip = $("tip");
@@ -892,7 +1179,234 @@ function IT_WORDS() { return {
   "Vitamins": "Vitamine",
   "GABA & neurotransmitters": "GABA e neurotrasmettitori",
   "Branched-chain amino acids": "Aminoacidi a catena ramificata",
-  "Cytokines": "Citochine"
+  "Cytokines": "Citochine",
+  /* insight lab: evidence sections (reversal, quality, clinic, severity) */
+  "'No difference' share by condition": "Quota di 'nessuna differenza' per patologia",
+  "A hypothesis: two literatures joined, not evidence that this intervention works in this condition.": "Un'ipotesi: due letterature messe insieme, non una prova che questo intervento funzioni in questa patologia.",
+  "Abstracts rarely report 'no difference'. A low null share signals publication and reporting bias.": "Gli abstract riportano raramente 'nessuna differenza'. Una quota bassa di risultati nulli segnala un bias di pubblicazione e di segnalazione.",
+  "Acquired / licensed": "Acquisito / in licenza",
+  "Active": "Attiva",
+  "Active and closed companies · the text on closed companies is the lesson": "Aziende attive e chiuse · il testo sulle aziende chiuse è la lezione",
+  "Active, not recruiting": "Attivo, reclutamento chiuso",
+  "Animal": "Animale",
+  "Animal edges": "Archi da studi animali",
+  "Animal only": "Solo negli animali",
+  "Animal → human: does the intervention effect hold in people?": "Dall'animale all'uomo: l'effetto dell'intervento si conferma nelle persone?",
+  "Animal ≥3 papers and ratio ≥2; human confirmation ≥2 papers · human = no animal or laboratory model named in the title or sentence": "Animali ≥3 articoli e rapporto ≥2; conferma nell'uomo ≥2 articoli · uomo = nessun modello animale o di laboratorio citato nel titolo o nella frase",
+  "Approval": "Approvazione",
+  "Approvals · readouts · deals · closures · financings": "Approvazioni · risultati · accordi · chiusure · finanziamenti",
+  "Approved": "Approvato",
+  "As of": "Aggiornato al",
+  "Available": "Disponibile",
+  "Background statement": "Affermazione di contesto",
+  "Based on trial registrations, not results or efficacy. Quadrant cut-offs are relative.": "Basato sulle registrazioni degli studi, non sui risultati né sull'efficacia. Le soglie dei quadranti sono relative.",
+  "By kind of evidence sentence · lower = 'no difference' results appear less in abstracts": "Per tipo di frase di evidenza · più basso = i risultati 'nessuna differenza' compaiono meno negli abstract",
+  "Candidate": "Candidato",
+  "Candidate list": "Elenco dei candidati",
+  "Click a row for the evidence": "Clicca una riga per vedere le evidenze",
+  "Click a row for the summary and sources": "Clicca una riga per il riassunto e le fonti",
+  "Clinical trials (ClinicalTrials.gov)": "Studi clinici (ClinicalTrials.gov)",
+  "Closed": "Chiusa",
+  "Closure": "Chiusura",
+  "Collecting microbiome trials from ClinicalTrials.gov. The first results appear here after the next weekly fetch.": "Stiamo raccogliendo gli studi sul microbioma da ClinicalTrials.gov. I primi risultati compariranno qui dopo il prossimo aggiornamento settimanale.",
+  "Companies, and lessons from closures": "Aziende e lezioni dalle chiusure",
+  "Company": "Azienda",
+  "Completed": "Completato",
+  "Condition side": "Lato patologia",
+  "Conditions with at least this many microbe–condition edges": "Patologie con almeno questo numero di archi microbo–patologia",
+  "Conditions with most edges first": "Prima le patologie con più archi",
+  "Conditions with strong evidence but few trials are 'opportunities', both high is 'crowded', many trials on weak evidence is 'speculative'. Below: industry records whose sources a person checked.": "Le patologie con evidenze solide ma pochi studi sono 'opportunità', entrambi alti è 'affollato', molti studi su evidenze deboli è 'speculativo'. Sotto: voci del settore industriale le cui fonti sono state verificate da una persona.",
+  "Conditions with the most registered trials": "Patologie con più studi registrati",
+  "Confirmed in humans": "Confermato nell'uomo",
+  "Consensus relations for this condition (in brackets: independently replicated)": "Relazioni di consenso per questa patologia (tra parentesi: replicate in modo indipendente)",
+  "Consensus relations independently replicated": "Relazioni di consenso replicate in modo indipendente",
+  "Consumer product": "Prodotto di consumo",
+  "Counts whether abstract sentences name a species or strain. Actual analysis resolution may differ.": "Conta se le frasi degli abstract nominano una specie o un ceppo. La risoluzione effettiva dell'analisi può essere diversa.",
+  "Crowded": "Affollato",
+  "Curated industry entries marked verified only. Not investment or product advice.": "Solo voci del settore curate e contrassegnate come verificate. Non è un consiglio di investimento né sui prodotti.",
+  "Curator note": "Nota del curatore",
+  "Date": "Data",
+  "Deal": "Accordo",
+  "Debates where both directions come from ≥2 groups": "Dibattiti in cui entrambe le direzioni provengono da ≥2 gruppi",
+  "Diagnostics": "Diagnostica",
+  "Discontinued": "Interrotto",
+  "Early": "Iniziale",
+  "Early (phase 1)": "Iniziale (fase 1)",
+  "Early phase 1": "Fase 1 iniziale",
+  "Enrolling by invitation": "Arruolamento su invito",
+  "Evidence = replicated consensus pairs + reversal candidates; more contested pairs than that excludes 'strong' · trial activity = active + completed trials weighted (phase 1/NA 1, phase 2 = 2, phase 3/4 = 3) · cut-offs = max(minimum, median of non-zero values)": "Evidenza = coppie di consenso replicate + candidati di inversione; se le coppie contestate sono di più, l'evidenza non è 'solida' · attività degli studi = studi attivi + completati, ponderati (fase 1/NA 1, fase 2 = 2, fase 3/4 = 3) · soglie = max(minimo, mediana dei valori non nulli)",
+  "Evidence quality": "Qualità delle evidenze",
+  "Evidence quality: how far can these results be trusted?": "Qualità delle evidenze: quanto ci si può fidare di questi risultati?",
+  "Evidence × trial-activity quadrant": "Quadrante evidenze × attività degli studi",
+  "Fecal microbiota": "Microbiota fecale",
+  "Financing": "Finanziamento",
+  "Flags": "Segnalazioni",
+  "From evidence to clinic": "Dalle evidenze alla clinica",
+  "Germs that are more common in people who are sicker, germs that go with a higher or lower risk of getting ill, and substances often mentioned with them. All of this means 'found together', not 'causes'.": "Batteri più comuni nelle persone più malate, batteri legati a un rischio più alto o più basso di ammalarsi, e sostanze spesso citate insieme a loro. Tutto questo significa 'trovati insieme', non 'causano'.",
+  "Good evidence means several unrelated teams found the same thing over several years. Here we check how much evidence is like that, whether 'no difference' results go missing, and whether animal results hold in people.": "Una buona evidenza significa che diversi gruppi indipendenti hanno trovato la stessa cosa nel corso di più anni. Qui controlliamo quante evidenze sono così, se i risultati 'nessuna differenza' vanno persi e se i risultati sugli animali valgono anche per le persone.",
+  "Herbal medicine / TCM": "Fitoterapia / medicina tradizionale cinese",
+  "Human: same / opposite": "Uomo: stessa direzione / opposta",
+  "Hypotheses joining two literatures: the condition papers (microbe lower/higher in the condition) and the intervention papers (the intervention raises/lowers that microbe). Click a row for both sides' evidence. 'Already tested' counts intervention papers that also mention the condition.": "Ipotesi che uniscono due letterature: gli articoli sulla patologia (microbo più basso/più alto nella patologia) e quelli sull'intervento (l'intervento aumenta/riduce quel microbo). Clicca una riga per le evidenze di entrambi i lati. 'Già testato' conta gli articoli sull'intervento che citano anche la patologia.",
+  "Hypothesis generator only. Two separate literatures are joined; this is not a treatment recommendation.": "Solo un generatore di ipotesi. Vengono unite due letterature distinte; non è una raccomandazione terapeutica.",
+  "In condition": "Nella patologia",
+  "In some illnesses a germ drops too low or grows too much. Other papers say some treatment (probiotics, diet…) raises or lowers that germ. We join the two into ideas worth testing. These are not treatments.": "In alcune malattie un batterio scende troppo o cresce troppo. Altri articoli dicono che un trattamento (probiotici, dieta…) fa salire o scendere quel batterio. Mettiamo insieme le due cose per avere idee da provare. Non sono cure.",
+  "Independent author groups (no shared author) and years reported": "Gruppi di autori indipendenti (nessun autore in comune) e anni di pubblicazione",
+  "Independent groups = connected components of papers sharing an author (ORCID or name); name-only hubs linking >50 papers connect only with ≥2 shared names · replicated: ≥3 groups over ≥3 years · null share = null-direction sentences / all · per condition only with ≥50 edges": "Gruppi indipendenti = componenti connesse di articoli che condividono un autore (ORCID o nome); i nomi-hub senza ORCID che collegano >50 articoli uniscono solo con ≥2 nomi in comune · replicato: ≥3 gruppi in ≥3 anni · quota nulla = frasi di direzione nulla / totale · per patologia solo con ≥50 archi",
+  "Independent groups are clusters of papers sharing no author. Name matching is imperfect, so counts are approximate.": "I gruppi indipendenti sono insiemi di articoli che non condividono alcun autore. L'abbinamento dei nomi è imperfetto, quindi i conteggi sono approssimativi.",
+  "Indication": "Indicazione",
+  "Industry record": "Registro industriale",
+  "Industry record: entries with checked sources": "Registro industriale: voci con fonti verificate",
+  "Intervention changes a microbe": "Un intervento modifica un microbo",
+  "Intervention papers that also mention this condition": "Articoli sull'intervento che citano anche questa patologia",
+  "Intervention side": "Lato intervento",
+  "Intervention · effect": "Intervento · effetto",
+  "Intervention → microbe effects with ≥3 same-direction animal papers, compared with human sentences": "Effetti intervento → microbo con ≥3 articoli su animali nella stessa direzione, confrontati con le frasi sull'uomo",
+  "Is what papers found turning into real treatments? Trials running in hospitals, products already approved, and lessons from companies that closed.": "Quello che gli articoli hanno trovato sta diventando una cura vera? Studi in corso negli ospedali, prodotti già approvati e lezioni dalle aziende che hanno chiuso.",
+  "Latest registered trials": "Ultimi studi registrati",
+  "Lesson": "Lezione",
+  "Lift ×2 = the metabolite is mentioned twice as often in papers on this microbe and condition as in all papers on the condition": "Lift ×2 = il metabolita è citato due volte più spesso negli articoli su questo microbo e questa patologia che in tutti gli articoli sulla patologia",
+  "Live biotherapeutic": "Bioterapeutico vivo",
+  "Mechanism triangles: microbe – metabolite – condition (co-mention)": "Triangoli di meccanismo: microbo – metabolita – patologia (co-menzione)",
+  "Metabolites co-mentioned in the same abstracts. Not a measured pathway.": "Metaboliti citati insieme negli stessi abstract. Non è una via metabolica misurata.",
+  "Microbes associated with disease risk": "Microbi associati al rischio di malattia",
+  "Microbes that differ in the worse subgroup": "Microbi che differiscono nel sottogruppo più grave",
+  "Microbe–condition association": "Associazione microbo–patologia",
+  "Milestone": "Tappa",
+  "Most animal sentences are filtered out upstream, so animal evidence is undercounted. Human confirmation is abstract-level.": "La maggior parte delle frasi su animali viene filtrata a monte, quindi le evidenze sugli animali sono sottostimate. La conferma nell'uomo è a livello di abstract.",
+  "N/A": "N/D",
+  "Next-generation probiotics": "Probiotici di nuova generazione",
+  "No candidate matches the filter.": "Nessun candidato corrisponde al filtro.",
+  "No candidate passes the thresholds yet.": "Nessun candidato supera ancora le soglie.",
+  "No verified industry entries yet.": "Ancora nessuna voce industriale verificata.",
+  "Not applicable": "Non applicabile",
+  "Not yet recruiting": "Non ancora in reclutamento",
+  "Opportunity": "Opportunità",
+  "Opposite in humans": "Opposto nell'uomo",
+  "Opposite in humans, or animal only": "Opposto nell'uomo, o solo negli animali",
+  "Oral hygiene & periodontal care": "Igiene orale e cure parodontali",
+  "Per year: share of microbe relation sentences naming a species, and naming a strain": "Per anno: quota delle frasi di relazione microbica che nominano una specie e che nominano un ceppo",
+  "Phage": "Fagi",
+  "Phase": "Fase",
+  "Phase 1": "Fase 1",
+  "Phase 2": "Fase 2",
+  "Phase 3": "Fase 3",
+  "Phase 4": "Fase 4",
+  "Phase 3–4": "Fase 3–4",
+  "Pick a candidate in the list.": "Scegli un candidato dall'elenco.",
+  "Pipeline by phase": "Pipeline per fase",
+  "Plant extracts & polysaccharides": "Estratti vegetali e polisaccaridi",
+  "Prebiotic / glycan": "Prebiotico / glicano",
+  "Products through regulatory review": "Prodotti passati per la valutazione regolatoria",
+  "Publication bias: share of 'no difference' reports": "Bias di pubblicazione: quota di risultati 'nessuna differenza'",
+  "Ranked by score · click a row for both sides' evidence": "Ordinati per punteggio · clicca una riga per le evidenze dei due lati",
+  "Readout": "Risultati",
+  "Recruiting": "In reclutamento",
+  "Refusal": "Rifiuto",
+  "Refused": "Rifiutato",
+  "Relapse / remission": "Recidiva / remissione",
+  "Replicated only": "Solo replicati",
+  "Replication": "Replicazione",
+  "Replication = independent author groups (no shared author) and the span of years · publication bias = share of 'no difference' reports · animal → human = whether an intervention effect seen in animals points the same way in human sentences · resolution = share of relations naming a species": "Replicazione = gruppi di autori indipendenti (nessun autore in comune) e arco di anni · bias di pubblicazione = quota di risultati 'nessuna differenza' · animale → uomo = se un effetto di un intervento visto negli animali va nella stessa direzione nelle frasi sull'uomo · risoluzione = quota di relazioni che nominano una specie",
+  "Reported by ≥3 independent author groups over ≥3 years": "Riportato da ≥3 gruppi di autori indipendenti in ≥3 anni",
+  "Resolution: share naming a species or strain": "Risoluzione: quota che nomina una specie o un ceppo",
+  "Restore (raise a depleted taxon)": "Ripristinare (aumentare un taxon impoverito)",
+  "Reversal candidates": "Candidati di inversione",
+  "Reversal candidates independently replicated": "Candidati di inversione replicati in modo indipendente",
+  "Reversal candidates: interventions that push a disease-shifted microbe back": "Candidati di inversione: interventi che riportano indietro un microbo alterato dalla malattia",
+  "Risk and genetic-association sentences (including Mendelian randomization). Few studies each; not established causes.": "Frasi su rischio e associazione genetica (inclusa la randomizzazione mendeliana). Pochi studi per ciascuna; non sono cause accertate.",
+  "Risk or genetic association": "Rischio o associazione genetica",
+  "Score": "Punteggio",
+  "Score combines the condition-side majority votes and ratio with the intervention-side majority papers and ratio (contested pairs ×0.5); phylum excluded; capped at 6 per condition, 5 per microbe, 60 overall · intervention side uses human-host sentences only · replicated = condition side ≥3 independent groups over ≥3 years and intervention side ≥2 groups": "Il punteggio combina voti e rapporto di maggioranza del lato patologia con articoli e rapporto di maggioranza del lato intervento (coppie contestate ×0,5); phylum escluso; massimo 6 per patologia, 5 per microbo, 60 in totale · il lato intervento usa solo frasi con ospite umano · replicato = lato patologia ≥3 gruppi indipendenti in ≥3 anni e lato intervento ≥2 gruppi",
+  "Severity / stage": "Gravità / stadio",
+  "Severity = microbes higher or lower in the worse subgroup (severe, non-responder, relapse, shorter survival) · risk = association with the risk of disease (including Mendelian randomization) · mechanisms = metabolites co-mentioned in the same abstracts (not a measured pathway)": "Gravità = microbi più alti o più bassi nel sottogruppo peggiore (grave, non responsivo, recidiva, sopravvivenza più breve) · rischio = associazione con il rischio di malattia (inclusa la randomizzazione mendeliana) · meccanismi = metaboliti citati insieme negli stessi abstract (non una via misurata)",
+  "Severity and risk: ≥3 papers in one direction, ratio ≥2 · mechanism triangles: top 30 consensus pairs with ≥10 co-mentioning papers, metabolite ≥5 papers, lift = share within the pair ÷ share among all papers on the condition ≥1.5, at most 3 per pair": "Gravità e rischio: ≥3 articoli in una direzione, rapporto ≥2 · triangoli di meccanismo: prime 30 coppie di consenso con ≥10 articoli di co-menzione, metabolita ≥5 articoli, lift = quota nella coppia ÷ quota in tutti gli articoli sulla patologia ≥1,5, al massimo 3 per coppia",
+  "Severity, risk and mechanisms: clues beyond association": "Gravità, rischio e meccanismi: indizi oltre l'associazione",
+  "Severity, risk, mechanisms": "Gravità, rischio, meccanismi",
+  "Species named": "Specie nominata",
+  "Species-level share by condition": "Quota a livello di specie per patologia",
+  "Speculative": "Speculativo",
+  "Sponsor": "Promotore",
+  "Start": "Inizio",
+  "Status": "Stato",
+  "Strain designated": "Ceppo indicato",
+  "Subgroup (severity, response)": "Sottogruppo (gravità, risposta)",
+  "Subgroup edges": "Archi di sottogruppo",
+  "Suppress (lower an enriched taxon)": "Sopprimere (ridurre un taxon arricchito)",
+  "Survival / prognosis": "Sopravvivenza / prognosi",
+  "Suspended": "Sospeso",
+  "Terminated": "Interrotto",
+  "The intervention may itself contain this microbe (e.g. a Lactobacillus product); not necessarily evidence of reversal.": "L'intervento potrebbe contenere esso stesso questo microbo (ad es. un prodotto a base di Lactobacillus); non è necessariamente una prova di inversione.",
+  "This analysis is not in the current data yet. It appears after the next knowledge-graph rebuild.": "Questa analisi non è ancora nei dati attuali. Comparirà dopo la prossima ricostruzione del grafo della conoscenza.",
+  "Timeline (newest first)": "Cronologia (dal più recente)",
+  "Title": "Titolo",
+  "Too little human data": "Dati sull'uomo insufficienti",
+  "Total": "Totale",
+  "Treatment response": "Risposta al trattamento",
+  "Trial activity": "Attività degli studi",
+  "Trial phases by condition": "Fasi degli studi per patologia",
+  "Unknown status": "Stato sconosciuto",
+  "We counted whether effects seen in mice were also seen in people.": "Abbiamo contato se gli effetti visti nei topi si vedevano anche nelle persone.",
+  "Which side is 'worse' (severe, non-responder, relapse) is inferred from sentence cues. Associations, not a prognostic tool.": "Quale lato sia 'peggiore' (grave, non responsivo, recidiva) è dedotto da indizi nella frase. Associazioni, non uno strumento prognostico.",
+  "Withdrawn": "Ritirato",
+  "active": "attivi",
+  "administered?": "somministrato?",
+  "already tested": "già testato",
+  "animal": "animale",
+  "bar = share, label = edges": "barra = quota, etichetta = archi",
+  "cited share": "quota citata",
+  "co-mentioning papers": "articoli di co-menzione",
+  "completed": "completati",
+  "consensus": "consenso",
+  "contested": "contestato",
+  "edges": "archi",
+  "entries": "voci",
+  "fetched": "raccolti",
+  "groups": "gruppi",
+  "higher in the condition": "più alto nella patologia",
+  "higher risk": "rischio più alto",
+  "higher when worse": "più alto quando più grave",
+  "human": "uomo",
+  "human papers": "articoli sull'uomo",
+  "independent groups": "gruppi indipendenti",
+  "journals": "riviste",
+  "lower in the condition": "più basso nella patologia",
+  "lower risk": "rischio più basso",
+  "lower when worse": "più basso quando più grave",
+  "may be the administered microbe": "potrebbe essere il microbo somministrato",
+  "observational": "osservazionale",
+  "registered trials": "studi registrati",
+  "replicated": "replicato",
+  "replicated consensus": "consenso replicato",
+  "reversal": "inversione",
+  "score": "punteggio",
+  "score sum": "somma dei punteggi",
+  "species level": "livello di specie",
+  "strain designation = culture-collection number (DSM, ATCC, ...) or 'strain X' in the sentence": "indicazione del ceppo = numero di collezione di colture (DSM, ATCC, ...) o 'strain X' nella frase",
+  "suspected-animal edges": "archi sospetti da animali",
+  "top sponsors": "principali promotori",
+  "trial activity": "attività degli studi",
+  "trials": "studi",
+  "unverified left out": "non verificate escluse",
+  "vs": "contro",
+  "worse side resolved": "lato peggiore determinato",
+  "x = evidence, y = trial activity": "x = evidenze, y = attività degli studi",
+  "years": "anni",
+  "Fermented foods": "Alimenti fermentati",
+  "Omega-3 fatty acids": "Acidi grassi omega-3",
+  "Vitamin supplements": "Integratori vitaminici",
+  "Mineral supplements / deficiency": "Integratori minerali / carenza",
+  "Statins": "Statine",
+  "GLP-1 agonists": "Agonisti del GLP-1",
+  "Other glucose-lowering drugs": "Altri ipoglicemizzanti",
+  "Bile-acid drugs (UDCA etc.)": "Farmaci a base di acidi biliari (UDCA ecc.)",
+  "NSAIDs & aspirin": "FANS e aspirina",
+  "Immune checkpoint inhibitors": "Inibitori dei checkpoint immunitari",
+  "Chemotherapy": "Chemioterapia",
+  "Radiation": "Radioterapia",
+  "Immunomodulators & biologics": "Immunomodulatori e farmaci biologici",
+  "Antivirals & antifungals": "Antivirali e antimicotici",
+  "Psychotropic drugs": "Psicofarmaci",
+  "Alcohol & smoking (exposure)": "Alcol e fumo (esposizione)"
 }; }
 /* ---- French words (English text -> French), used by K/V/nm when lang is "fr"; same English keys as IT_WORDS ---- */
 function FR_WORDS() { return {
@@ -1262,6 +1776,233 @@ function FR_WORDS() { return {
   "Vitamins": "Vitamines",
   "GABA & neurotransmitters": "GABA et neurotransmetteurs",
   "Branched-chain amino acids": "Acides aminés à chaîne ramifiée",
-  "Cytokines": "Cytokines"
+  "Cytokines": "Cytokines",
+  /* insight lab: evidence sections (reversal, quality, clinic, severity) */
+  "'No difference' share by condition": "Part de « aucune différence » par pathologie",
+  "A hypothesis: two literatures joined, not evidence that this intervention works in this condition.": "Une hypothèse : deux littératures réunies, pas une preuve que cette intervention est efficace dans cette pathologie.",
+  "Abstracts rarely report 'no difference'. A low null share signals publication and reporting bias.": "Les résumés rapportent rarement « aucune différence ». Une faible part de résultats nuls signale un biais de publication et de déclaration.",
+  "Acquired / licensed": "Acquis / sous licence",
+  "Active": "Active",
+  "Active and closed companies · the text on closed companies is the lesson": "Entreprises actives et fermées · le texte des entreprises fermées constitue la leçon",
+  "Active, not recruiting": "Actif, recrutement terminé",
+  "Animal": "Animal",
+  "Animal edges": "Arêtes issues d'études animales",
+  "Animal only": "Chez l'animal uniquement",
+  "Animal → human: does the intervention effect hold in people?": "De l'animal à l'humain : l'effet de l'intervention se confirme-t-il chez l'humain ?",
+  "Animal ≥3 papers and ratio ≥2; human confirmation ≥2 papers · human = no animal or laboratory model named in the title or sentence": "Animal ≥3 articles et rapport ≥2 ; confirmation humaine ≥2 articles · humain = aucun modèle animal ou de laboratoire cité dans le titre ou la phrase",
+  "Approval": "Autorisation",
+  "Approvals · readouts · deals · closures · financings": "Autorisations · résultats · accords · fermetures · financements",
+  "Approved": "Autorisé",
+  "As of": "À jour au",
+  "Available": "Disponible",
+  "Background statement": "Énoncé de contexte",
+  "Based on trial registrations, not results or efficacy. Quadrant cut-offs are relative.": "Fondé sur les enregistrements d'essais, pas sur les résultats ni l'efficacité. Les seuils des quadrants sont relatifs.",
+  "By kind of evidence sentence · lower = 'no difference' results appear less in abstracts": "Par type de phrase de preuve · plus bas = les résultats « aucune différence » apparaissent moins dans les résumés",
+  "Candidate": "Candidat",
+  "Candidate list": "Liste des candidats",
+  "Click a row for the evidence": "Cliquez sur une ligne pour voir les preuves",
+  "Click a row for the summary and sources": "Cliquez sur une ligne pour le résumé et les sources",
+  "Clinical trials (ClinicalTrials.gov)": "Essais cliniques (ClinicalTrials.gov)",
+  "Closed": "Fermée",
+  "Closure": "Fermeture",
+  "Collecting microbiome trials from ClinicalTrials.gov. The first results appear here after the next weekly fetch.": "Collecte en cours des essais sur le microbiome depuis ClinicalTrials.gov. Les premiers résultats apparaîtront ici après la prochaine collecte hebdomadaire.",
+  "Companies, and lessons from closures": "Entreprises et leçons des fermetures",
+  "Company": "Entreprise",
+  "Completed": "Terminé",
+  "Condition side": "Côté pathologie",
+  "Conditions with at least this many microbe–condition edges": "Pathologies comptant au moins ce nombre d'arêtes microbe–pathologie",
+  "Conditions with most edges first": "Pathologies ayant le plus d'arêtes en premier",
+  "Conditions with strong evidence but few trials are 'opportunities', both high is 'crowded', many trials on weak evidence is 'speculative'. Below: industry records whose sources a person checked.": "Les pathologies aux preuves solides mais avec peu d'essais sont des « opportunités », les deux élevés donnent « encombré », beaucoup d'essais sur des preuves faibles donnent « spéculatif ». Ci-dessous : fiches industrielles dont une personne a vérifié les sources.",
+  "Conditions with the most registered trials": "Pathologies comptant le plus d'essais enregistrés",
+  "Confirmed in humans": "Confirmé chez l'humain",
+  "Consensus relations for this condition (in brackets: independently replicated)": "Relations consensuelles pour cette pathologie (entre parenthèses : répliquées de façon indépendante)",
+  "Consensus relations independently replicated": "Relations consensuelles répliquées de façon indépendante",
+  "Consumer product": "Produit grand public",
+  "Counts whether abstract sentences name a species or strain. Actual analysis resolution may differ.": "Compte si les phrases des résumés nomment une espèce ou une souche. La résolution réelle de l'analyse peut différer.",
+  "Crowded": "Encombré",
+  "Curated industry entries marked verified only. Not investment or product advice.": "Uniquement les fiches industrielles vérifiées par un curateur. Ni conseil en investissement ni recommandation de produit.",
+  "Curator note": "Note du curateur",
+  "Date": "Date",
+  "Deal": "Accord",
+  "Debates where both directions come from ≥2 groups": "Débats où les deux directions proviennent de ≥2 groupes",
+  "Diagnostics": "Diagnostic",
+  "Discontinued": "Arrêté",
+  "Early": "Précoce",
+  "Early (phase 1)": "Précoce (phase 1)",
+  "Early phase 1": "Phase 1 précoce",
+  "Enrolling by invitation": "Inclusion sur invitation",
+  "Evidence = replicated consensus pairs + reversal candidates; more contested pairs than that excludes 'strong' · trial activity = active + completed trials weighted (phase 1/NA 1, phase 2 = 2, phase 3/4 = 3) · cut-offs = max(minimum, median of non-zero values)": "Preuves = paires consensuelles répliquées + candidats d'inversion ; davantage de paires contestées exclut « solide » · activité d'essais = essais actifs + terminés pondérés (phase 1/NA 1, phase 2 = 2, phase 3/4 = 3) · seuils = max(minimum, médiane des valeurs non nulles)",
+  "Evidence quality": "Qualité des preuves",
+  "Evidence quality: how far can these results be trusted?": "Qualité des preuves : quelle confiance accorder à ces résultats ?",
+  "Evidence × trial-activity quadrant": "Quadrant preuves × activité d'essais",
+  "Fecal microbiota": "Microbiote fécal",
+  "Financing": "Financement",
+  "Flags": "Signalements",
+  "From evidence to clinic": "Des preuves à la clinique",
+  "Germs that are more common in people who are sicker, germs that go with a higher or lower risk of getting ill, and substances often mentioned with them. All of this means 'found together', not 'causes'.": "Des microbes plus fréquents chez les personnes plus malades, des microbes liés à un risque plus ou moins élevé de tomber malade, et des substances souvent citées avec eux. Tout cela veut dire « trouvés ensemble », pas « causent ».",
+  "Good evidence means several unrelated teams found the same thing over several years. Here we check how much evidence is like that, whether 'no difference' results go missing, and whether animal results hold in people.": "Une bonne preuve, c'est quand plusieurs équipes sans lien trouvent la même chose sur plusieurs années. Ici, on regarde combien de preuves sont ainsi, si les résultats « aucune différence » disparaissent, et si les résultats chez l'animal se vérifient chez l'humain.",
+  "Herbal medicine / TCM": "Phytothérapie / médecine traditionnelle chinoise",
+  "Human: same / opposite": "Humain : même sens / sens opposé",
+  "Hypotheses joining two literatures: the condition papers (microbe lower/higher in the condition) and the intervention papers (the intervention raises/lowers that microbe). Click a row for both sides' evidence. 'Already tested' counts intervention papers that also mention the condition.": "Hypothèses réunissant deux littératures : les articles sur la pathologie (microbe plus bas/plus élevé dans la pathologie) et les articles sur l'intervention (l'intervention augmente/diminue ce microbe). Cliquez sur une ligne pour les preuves des deux côtés. « Déjà testé » compte les articles sur l'intervention qui mentionnent aussi la pathologie.",
+  "Hypothesis generator only. Two separate literatures are joined; this is not a treatment recommendation.": "Générateur d'hypothèses uniquement. Deux littératures distinctes sont réunies ; ce n'est pas une recommandation thérapeutique.",
+  "In condition": "Dans la pathologie",
+  "In some illnesses a germ drops too low or grows too much. Other papers say some treatment (probiotics, diet…) raises or lowers that germ. We join the two into ideas worth testing. These are not treatments.": "Dans certaines maladies, un microbe baisse trop ou augmente trop. D'autres articles disent qu'un traitement (probiotiques, alimentation…) fait monter ou baisser ce microbe. On assemble les deux pour obtenir des idées à tester. Ce ne sont pas des traitements.",
+  "Independent author groups (no shared author) and years reported": "Groupes d'auteurs indépendants (aucun auteur commun) et années de publication",
+  "Independent groups = connected components of papers sharing an author (ORCID or name); name-only hubs linking >50 papers connect only with ≥2 shared names · replicated: ≥3 groups over ≥3 years · null share = null-direction sentences / all · per condition only with ≥50 edges": "Groupes indépendants = composantes connexes d'articles partageant un auteur (ORCID ou nom) ; les noms pivots sans ORCID reliant >50 articles ne relient qu'avec ≥2 noms communs · répliqué : ≥3 groupes sur ≥3 ans · part nulle = phrases de direction nulle / total · par pathologie seulement avec ≥50 arêtes",
+  "Independent groups are clusters of papers sharing no author. Name matching is imperfect, so counts are approximate.": "Les groupes indépendants sont des ensembles d'articles sans auteur commun. L'appariement des noms est imparfait : les comptes sont approximatifs.",
+  "Indication": "Indication",
+  "Industry record": "Registre industriel",
+  "Industry record: entries with checked sources": "Registre industriel : fiches aux sources vérifiées",
+  "Intervention changes a microbe": "Une intervention modifie un microbe",
+  "Intervention papers that also mention this condition": "Articles sur l'intervention qui mentionnent aussi cette pathologie",
+  "Intervention side": "Côté intervention",
+  "Intervention · effect": "Intervention · effet",
+  "Intervention → microbe effects with ≥3 same-direction animal papers, compared with human sentences": "Effets intervention → microbe avec ≥3 articles chez l'animal de même sens, comparés aux phrases chez l'humain",
+  "Is what papers found turning into real treatments? Trials running in hospitals, products already approved, and lessons from companies that closed.": "Ce que les articles ont trouvé devient-il de vrais traitements ? Des essais en cours à l'hôpital, des produits déjà autorisés et les leçons des entreprises qui ont fermé.",
+  "Latest registered trials": "Derniers essais enregistrés",
+  "Lesson": "Leçon",
+  "Lift ×2 = the metabolite is mentioned twice as often in papers on this microbe and condition as in all papers on the condition": "Lift ×2 = le métabolite est cité deux fois plus souvent dans les articles sur ce microbe et cette pathologie que dans l'ensemble des articles sur la pathologie",
+  "Live biotherapeutic": "Biothérapeutique vivant",
+  "Mechanism triangles: microbe – metabolite – condition (co-mention)": "Triangles de mécanisme : microbe – métabolite – pathologie (co-mention)",
+  "Metabolites co-mentioned in the same abstracts. Not a measured pathway.": "Métabolites cités ensemble dans les mêmes résumés. Ce n'est pas une voie mesurée.",
+  "Microbes associated with disease risk": "Microbes associés au risque de maladie",
+  "Microbes that differ in the worse subgroup": "Microbes qui diffèrent dans le sous-groupe le plus atteint",
+  "Microbe–condition association": "Association microbe–pathologie",
+  "Milestone": "Étape",
+  "Most animal sentences are filtered out upstream, so animal evidence is undercounted. Human confirmation is abstract-level.": "La plupart des phrases sur l'animal sont filtrées en amont : les preuves animales sont donc sous-comptées. La confirmation chez l'humain est au niveau du résumé.",
+  "N/A": "N/A",
+  "Next-generation probiotics": "Probiotiques de nouvelle génération",
+  "No candidate matches the filter.": "Aucun candidat ne correspond au filtre.",
+  "No candidate passes the thresholds yet.": "Aucun candidat ne franchit encore les seuils.",
+  "No verified industry entries yet.": "Aucune fiche industrielle vérifiée pour l'instant.",
+  "Not applicable": "Sans objet",
+  "Not yet recruiting": "Recrutement pas encore ouvert",
+  "Opportunity": "Opportunité",
+  "Opposite in humans": "Inverse chez l'humain",
+  "Opposite in humans, or animal only": "Inverse chez l'humain, ou chez l'animal uniquement",
+  "Oral hygiene & periodontal care": "Hygiène bucco-dentaire et soins parodontaux",
+  "Per year: share of microbe relation sentences naming a species, and naming a strain": "Par année : part des phrases de relation microbienne qui nomment une espèce, et qui nomment une souche",
+  "Phage": "Phages",
+  "Phase": "Phase",
+  "Phase 1": "Phase 1",
+  "Phase 2": "Phase 2",
+  "Phase 3": "Phase 3",
+  "Phase 4": "Phase 4",
+  "Phase 3–4": "Phase 3–4",
+  "Pick a candidate in the list.": "Choisissez un candidat dans la liste.",
+  "Pipeline by phase": "Pipeline par phase",
+  "Plant extracts & polysaccharides": "Extraits végétaux et polysaccharides",
+  "Prebiotic / glycan": "Prébiotique / glycane",
+  "Products through regulatory review": "Produits passés par l'évaluation réglementaire",
+  "Publication bias: share of 'no difference' reports": "Biais de publication : part des résultats « aucune différence »",
+  "Ranked by score · click a row for both sides' evidence": "Classés par score · cliquez sur une ligne pour les preuves des deux côtés",
+  "Readout": "Résultats",
+  "Recruiting": "Recrutement en cours",
+  "Refusal": "Refus",
+  "Refused": "Refusé",
+  "Relapse / remission": "Rechute / rémission",
+  "Replicated only": "Répliqués uniquement",
+  "Replication": "Réplication",
+  "Replication = independent author groups (no shared author) and the span of years · publication bias = share of 'no difference' reports · animal → human = whether an intervention effect seen in animals points the same way in human sentences · resolution = share of relations naming a species": "Réplication = groupes d'auteurs indépendants (aucun auteur commun) et étendue des années · biais de publication = part des résultats « aucune différence » · animal → humain = l'effet d'une intervention vu chez l'animal va-t-il dans le même sens dans les phrases chez l'humain · résolution = part des relations qui nomment une espèce",
+  "Reported by ≥3 independent author groups over ≥3 years": "Rapporté par ≥3 groupes d'auteurs indépendants sur ≥3 ans",
+  "Resolution: share naming a species or strain": "Résolution : part nommant une espèce ou une souche",
+  "Restore (raise a depleted taxon)": "Restaurer (augmenter un taxon appauvri)",
+  "Reversal candidates": "Candidats d'inversion",
+  "Reversal candidates independently replicated": "Candidats d'inversion répliqués de façon indépendante",
+  "Reversal candidates: interventions that push a disease-shifted microbe back": "Candidats d'inversion : interventions qui ramènent un microbe déplacé par la maladie",
+  "Risk and genetic-association sentences (including Mendelian randomization). Few studies each; not established causes.": "Phrases de risque et d'association génétique (y compris la randomisation mendélienne). Peu d'études chacune ; pas des causes établies.",
+  "Risk or genetic association": "Risque ou association génétique",
+  "Score": "Score",
+  "Score combines the condition-side majority votes and ratio with the intervention-side majority papers and ratio (contested pairs ×0.5); phylum excluded; capped at 6 per condition, 5 per microbe, 60 overall · intervention side uses human-host sentences only · replicated = condition side ≥3 independent groups over ≥3 years and intervention side ≥2 groups": "Le score combine les votes et le rapport majoritaires côté pathologie avec les articles et le rapport majoritaires côté intervention (paires contestées ×0,5) ; phylum exclu ; plafonné à 6 par pathologie, 5 par microbe, 60 au total · le côté intervention n'utilise que des phrases à hôte humain · répliqué = côté pathologie ≥3 groupes indépendants sur ≥3 ans et côté intervention ≥2 groupes",
+  "Severity / stage": "Sévérité / stade",
+  "Severity = microbes higher or lower in the worse subgroup (severe, non-responder, relapse, shorter survival) · risk = association with the risk of disease (including Mendelian randomization) · mechanisms = metabolites co-mentioned in the same abstracts (not a measured pathway)": "Sévérité = microbes plus élevés ou plus bas dans le sous-groupe le plus atteint (sévère, non-répondeur, rechute, survie plus courte) · risque = association avec le risque de maladie (y compris la randomisation mendélienne) · mécanismes = métabolites cités ensemble dans les mêmes résumés (pas une voie mesurée)",
+  "Severity and risk: ≥3 papers in one direction, ratio ≥2 · mechanism triangles: top 30 consensus pairs with ≥10 co-mentioning papers, metabolite ≥5 papers, lift = share within the pair ÷ share among all papers on the condition ≥1.5, at most 3 per pair": "Sévérité et risque : ≥3 articles dans un sens, rapport ≥2 · triangles de mécanisme : 30 premières paires consensuelles avec ≥10 articles de co-mention, métabolite ≥5 articles, lift = part dans la paire ÷ part dans tous les articles sur la pathologie ≥1,5, au plus 3 par paire",
+  "Severity, risk and mechanisms: clues beyond association": "Sévérité, risque et mécanismes : des indices au-delà de l'association",
+  "Severity, risk, mechanisms": "Sévérité, risque, mécanismes",
+  "Species named": "Espèce nommée",
+  "Species-level share by condition": "Part au niveau de l'espèce par pathologie",
+  "Speculative": "Spéculatif",
+  "Sponsor": "Promoteur",
+  "Start": "Début",
+  "Status": "Statut",
+  "Strain designated": "Souche désignée",
+  "Subgroup (severity, response)": "Sous-groupe (sévérité, réponse)",
+  "Subgroup edges": "Arêtes de sous-groupe",
+  "Suppress (lower an enriched taxon)": "Supprimer (réduire un taxon enrichi)",
+  "Survival / prognosis": "Survie / pronostic",
+  "Suspended": "Suspendu",
+  "Terminated": "Arrêté prématurément",
+  "The intervention may itself contain this microbe (e.g. a Lactobacillus product); not necessarily evidence of reversal.": "L'intervention peut contenir elle-même ce microbe (p. ex. un produit à base de Lactobacillus) ; ce n'est pas forcément une preuve d'inversion.",
+  "This analysis is not in the current data yet. It appears after the next knowledge-graph rebuild.": "Cette analyse ne figure pas encore dans les données actuelles. Elle apparaîtra après la prochaine reconstruction du graphe de connaissances.",
+  "Timeline (newest first)": "Chronologie (du plus récent)",
+  "Title": "Titre",
+  "Too little human data": "Trop peu de données humaines",
+  "Total": "Total",
+  "Treatment response": "Réponse au traitement",
+  "Trial activity": "Activité d'essais",
+  "Trial phases by condition": "Phases des essais par pathologie",
+  "Unknown status": "Statut inconnu",
+  "We counted whether effects seen in mice were also seen in people.": "Nous avons compté si les effets vus chez la souris se retrouvaient chez l'humain.",
+  "Which side is 'worse' (severe, non-responder, relapse) is inferred from sentence cues. Associations, not a prognostic tool.": "Le côté « le plus atteint » (sévère, non-répondeur, rechute) est déduit d'indices dans la phrase. Des associations, pas un outil pronostique.",
+  "Withdrawn": "Retiré",
+  "active": "actifs",
+  "administered?": "administré ?",
+  "already tested": "déjà testé",
+  "animal": "animal",
+  "bar = share, label = edges": "barre = part, étiquette = arêtes",
+  "cited share": "part citée",
+  "co-mentioning papers": "articles de co-mention",
+  "completed": "terminés",
+  "consensus": "consensus",
+  "contested": "contesté",
+  "edges": "arêtes",
+  "entries": "fiches",
+  "fetched": "collectés",
+  "groups": "groupes",
+  "higher in the condition": "plus élevé dans la pathologie",
+  "higher risk": "risque plus élevé",
+  "higher when worse": "plus élevé quand plus atteint",
+  "human": "humain",
+  "human papers": "articles chez l'humain",
+  "independent groups": "groupes indépendants",
+  "journals": "revues",
+  "lower in the condition": "plus bas dans la pathologie",
+  "lower risk": "risque plus faible",
+  "lower when worse": "plus bas quand plus atteint",
+  "may be the administered microbe": "peut être le microbe administré",
+  "observational": "observationnel",
+  "registered trials": "essais enregistrés",
+  "replicated": "répliqué",
+  "replicated consensus": "consensus répliqué",
+  "reversal": "inversion",
+  "score": "score",
+  "score sum": "somme des scores",
+  "species level": "niveau de l'espèce",
+  "strain designation = culture-collection number (DSM, ATCC, ...) or 'strain X' in the sentence": "désignation de souche = numéro de collection de cultures (DSM, ATCC, ...) ou « strain X » dans la phrase",
+  "suspected-animal edges": "arêtes suspectées animales",
+  "top sponsors": "principaux promoteurs",
+  "trial activity": "activité d'essais",
+  "trials": "essais",
+  "unverified left out": "non vérifiées exclues",
+  "vs": "contre",
+  "worse side resolved": "côté le plus atteint déterminé",
+  "x = evidence, y = trial activity": "x = preuves, y = activité d'essais",
+  "years": "années",
+  "Fermented foods": "Aliments fermentés",
+  "Omega-3 fatty acids": "Acides gras oméga-3",
+  "Vitamin supplements": "Suppléments vitaminiques",
+  "Mineral supplements / deficiency": "Suppléments minéraux / carence",
+  "Statins": "Statines",
+  "GLP-1 agonists": "Agonistes du GLP-1",
+  "Other glucose-lowering drugs": "Autres hypoglycémiants",
+  "Bile-acid drugs (UDCA etc.)": "Médicaments à base d'acides biliaires (UDCA, etc.)",
+  "NSAIDs & aspirin": "AINS et aspirine",
+  "Immune checkpoint inhibitors": "Inhibiteurs de points de contrôle immunitaire",
+  "Chemotherapy": "Chimiothérapie",
+  "Radiation": "Radiothérapie",
+  "Immunomodulators & biologics": "Immunomodulateurs et biothérapies",
+  "Antivirals & antifungals": "Antiviraux et antifongiques",
+  "Psychotropic drugs": "Psychotropes",
+  "Alcohol & smoking (exposure)": "Alcool et tabac (exposition)"
 }; }
 })();
