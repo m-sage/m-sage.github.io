@@ -1,6 +1,6 @@
 (function () {
 "use strict";
-/* M-SAGE scroll page: every finding on one continuous page, in Korean or English, at three reading levels. */
+/* M-SAGE scroll page: every finding on one continuous page, in Korean, English, Italian or French, at three reading levels. */
 const C = {teal: "#2dd4bf", coral: "#fb7185", amber: "#fbbf24", violet: "#a78bfa", sky: "#38bdf8", lime: "#a3e635", text: "#e6ecff", muted: "#8d9bc4", dim: "#5d6a92", line: "#1b2648"};
 const PAL = [C.sky, C.coral, C.teal, C.amber, C.violet, C.lime, "#f472b6", "#60a5fa", "#fb923c", "#94a3b8"];
 const $ = id => document.getElementById(id);
@@ -9,7 +9,18 @@ const store = {get(k) { try { return localStorage.getItem(k); } catch (e) { retu
 const qs = new URLSearchParams(location.search);
 let lang = qs.get("lang") || store.get("msage.lang") || "ko";
 let level = qs.get("level") || store.get("msage.level") || "eli20";
-const fmt = n => n == null ? "—" : Number(n).toLocaleString(lang === "ko" ? "ko-KR" : "en-US");
+if (!["ko", "en", "it", "fr"].includes(lang)) lang = "ko";
+/* Italian and French: K(ko, en, it, fr). Without an explicit translation the English text is looked up in the page's dictionary,
+   IT_WORDS() or FR_WORDS() (end of file); if absent, English is shown (and reported to MSAGE_I18N_MISS). */
+const WORDS = {it: IT_WORDS, fr: FR_WORDS}, DICT = {};
+const XL = () => !!WORDS[lang];                                 // a dictionary language (it, fr): English text is translated through WORDS
+const xlate = en => { if (typeof en !== "string" || !en || !WORDS[lang]) return en; const D = DICT[lang] = DICT[lang] || WORDS[lang]();
+  const v = D[en] != null ? D[en] : D[cap(en)]; if (v != null) return v;
+  if (window.MSAGE_I18N_MISS) window.MSAGE_I18N_MISS(en, "story", lang); return en; };
+const K = (ko, en, it, fr) => lang === "ko" ? ko : lang === "en" ? en : (lang === "it" ? it : fr) ?? xlate(en);
+const nm = s => XL() ? xlate(s) : s;                           // English data label -> Italian/French name
+const LOC = gb => ({ko: "ko-KR", it: "it-IT", fr: "fr-FR"})[lang] || (gb ? "en-GB" : "en-US");
+const fmt = n => n == null ? "—" : Number(n).toLocaleString(LOC());
 
 /* ------------------------------------------------------------------ words */
 const T = {
@@ -108,17 +119,40 @@ const TOPIC_EN = {immune: "Immunity & inflammation", metabolism: "Microbial meta
 const STATIC = window.MSAGE_STATIC || null;            // set only in the packaged, server-free website
 const ROUTE = window.MSAGE_ROUTES || {cockpit: "/cockpit", story: "/story", module: "/cockpit/module"};   // page addresses
 const ORDER = ["vitals", "news", "deep", "consensus", "debate", "signature", "trends", "concepts", "map", "gaps", "minerva", "findings", "radar", "people", "world", "engine"].filter(id => !(STATIC && STATIC.public && (id === "vitals" || id === "engine")));
-const L = i => (lang === "ko" ? 0 : 1);
-const tx = k => T[lang][k];
-const lead = id => S[id].l[level][L()];
+const pick = a => K(a[0], a[1], a[2], a[3]);                   // [ko, en], [ko, en, it] or [ko, en, it, fr]
+const tx = k => { const v = T[lang === "ko" ? "ko" : "en"][k];   // Italian/French: the English word through IT_WORDS()/FR_WORDS()
+  return !XL() ? v : typeof v === "string" ? xlate(v) : Object.fromEntries(Object.entries(v).map(([a, b]) => [a, xlate(b)])); };
+const kind = k => { const v = KIND[lang === "ko" ? "ko" : "en"][k]; return XL() ? xlate(v) : v; };
+const stext = s => { const t = (s && s.text) || {}; return t[lang] || (XL() ? t.en : null) || {}; };   // AI story text; Italian and French fall back to English
+const lead = id => pick(S[id].l[level]);
+/* AI paper summaries are written in Korean; the site data carries summary_i18n {korean: {en, it, fr}} (filled in gradually) */
+const summaryText = ko => { if (!ko) return null; if (lang === "ko") return ko;
+  const m = ((snap && snap.summary_i18n) || (window.MSAGE_DATA || {}).summary_i18n || {})[ko]; return (m && m[lang]) || null; };
+const SUMMARK = {orig: ["원문 제목", "original title", "titolo originale", "titre original"],
+  pend: ["(한국어 AI 요약 · 번역 준비 중)", "(Korean AI summary — translation pending)", "(riassunto IA in coreano — traduzione in arrivo)", "(résumé IA en coréen — traduction en cours)"]};
+// summary in the page language; else the paper's own (English) title, marked; else the Korean, marked as pending. titled = the title is already shown
+const sumHTML = (ko, title) => { const t = summaryText(ko); if (t) return {html: esc(t), titled: false};
+  if (title) return {html: `${esc(title)}<small class="sx">${pick(SUMMARK.orig)}</small>`, titled: true};
+  return {html: `<span class="sx-ko" lang="ko">${esc(ko)}</span><small class="sx sx-pend">${pick(SUMMARK.pend)}</small>`, titled: false}; };
 
 /* ------------------------------------------------------------------ data */
 let snap = null, ins = null, live = null, stories = null, vitals = null, storage = null;
 const get = (u, f) => f ? Promise.resolve(f) : fetch(u, {cache: "no-cache"}).then(r => r.ok ? r.json() : Promise.reject(r.status));
 const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
-const dname = (key, ko) => lang === "ko" ? (ko || key) : cap((((ins || {}).labels_en || {}).disease || {})[key] || TOPIC_EN[key] || ko || key);
+const dname = (key, ko) => lang === "ko" ? (ko || key) : nm(cap((((ins || {}).labels_en || {}).disease || {})[key] || TOPIC_EN[key] || ko || key));
 const catKey = {Disease: "disease", Method: "method", Intervention: "intervention", Metabolite: "metabolite", BodySite: "site"};
-const tname = (cat, r) => lang === "ko" || cat === "Taxon" ? r.name : ((((ins || {}).labels_en || {})[catKey[cat]] || {})[r.id] || r.name);
+/* Korean entity name -> English, for lists that carry only {label: category, name} (concept co-mentions): built from the ids seen in the insights */
+let koIdx = null, koIdxFor = null;
+const koToEn = (cat, name) => { if (koIdxFor !== ins) { koIdxFor = ins; koIdx = {}; const L = (ins || {}).labels_en || {};
+    const add = (c, id, n) => { const e = (L[catKey[c]] || {})[id]; if (e && n && !koIdx[c + "|" + n]) koIdx[c + "|" + n] = e; };
+    const walk = o => { if (Array.isArray(o)) return o.forEach(walk); if (!o || typeof o !== "object") return;
+      if (o.id && (o.name || o.label)) Object.keys(catKey).forEach(c => add(c, o.id, o.name || o.label));
+      if (o.disease && o.disease_label) add("Disease", o.disease, o.disease_label);
+      Object.values(o).forEach(walk); };
+    walk(ins || {}); }
+  return koIdx[cat + "|" + name] || null; };
+const ename = w => lang === "ko" || w.label === "Taxon" ? w.name : (e => e ? nm(cap(e)) : w.name)(koToEn(w.label, w.name));
+const tname = (cat, r) => lang === "ko" || cat === "Taxon" ? r.name : nm((((ins || {}).labels_en || {})[catKey[cat]] || {})[r.id] || r.name);
 
 /* ------------------------------------------------------------------ charts */
 const charts = {};
@@ -133,11 +167,11 @@ window.addEventListener("resize", () => Object.values(charts).forEach(c => c.res
 
 /* ------------------------------------------------------------------ pieces */
 function storyCard(s) {
-  const t = (s.text || {})[lang] || {};
+  const t = stext(s);
   const fresh = (Date.now() / 1000 - (s.changed_at || 0)) < 86400 * 2;
   const ex = (s.examples || [])[0];
   const pro = level === "pro";
-  return `<article class="story k-${s.kind}"><span class="kind">${esc(KIND[lang][s.kind] || s.kind)}</span>
+  return `<article class="story k-${s.kind}"><span class="kind">${esc(kind(s.kind) || s.kind)}</span>
     <span class="badge ${s.ai ? "ai" : ""}">${s.ai ? tx("ai") : tx("tpl")}</span>${fresh ? `<span class="badge new">${tx("isnew")}</span>` : ""}
     <h4>${esc(t.title || "")}</h4><p>${esc(t[level] || t.eli20 || "")}</p>
     ${pro && ex ? `<div class="ev"><q>${esc(ex.quote)}</q> ${ex.pmid ? `· <a href="https://europepmc.org/article/MED/${esc(ex.pmid)}" target="_blank" rel="noopener">PMID ${esc(ex.pmid)}</a>` : ""}</div>` : ""}</article>`;
@@ -159,34 +193,35 @@ const head = cols => `<thead><tr>${cols.map(c => `<th${c[1] ? ' class="n"' : ""}
 const R = {
   vitals() {
     const V = vitals, g1 = V.growth_1h || {}, g24 = V.growth_24h || {}, x = V.latest || {};
-    const KEYS = [["papers_read", lang === "ko" ? "읽은 논문" : "Papers read"], ["relations", lang === "ko" ? "미생물 관계" : "Relations"],
-      ["relations_ai_checked", lang === "ko" ? "AI 재확인 통과" : "AI-checked"], ["graph_nodes", lang === "ko" ? "그래프 노드" : "Graph nodes"],
-      ["neo4j_nodes", "Neo4j nodes"], ["stories", lang === "ko" ? "이야기" : "Stories"], ["follow_ups", lang === "ko" ? "자동 추가 분석" : "Follow-ups"]];
+    const KEYS = [["papers_read", K("읽은 논문", "Papers read")], ["relations", K("미생물 관계", "Relations")],
+      ["relations_ai_checked", K("AI 재확인 통과", "AI-checked")], ["graph_nodes", K("그래프 노드", "Graph nodes")],
+      ["neo4j_nodes", K("Neo4j nodes", "Neo4j nodes", "Nodi Neo4j", "Nœuds Neo4j")], ["stories", K("이야기", "Stories")], ["follow_ups", K("자동 추가 분석", "Follow-ups")]];
     const sign = v => v == null ? "—" : (v > 0 ? "+" : "") + fmt(v);
     const kp = KEYS.map(([k, n]) => `<div class="kpi"><b>${fmt(x[k])}</b><span>${n}<br><span style="color:${(g1[k] || 0) > 0 ? C.lime : C.dim}">1h ${sign(g1[k])}</span> · <span style="color:${(g24[k] || 0) > 0 ? C.lime : C.dim}">24h ${sign(g24[k])}</span></span></div>`).join("");
     const color = {ok: C.teal, warn: C.amber, bad: C.coral}, sum = V.summary || {};
+    const vl = (c, p) => c[p + lang] || (XL() ? c[p + "en"] : "");   // checks carry ko/en text; Italian and French show the English
     const list = (V.checks || []).slice().sort((a, b) => ({bad: 0, warn: 1, ok: 2}[a.state] - {bad: 0, warn: 1, ok: 2}[b.state]));
     const rows = list.map(c => `<tr><td style="width:14px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color[c.state]}"></span></td>
-      <td>${esc(c[lang])}${c.state !== "ok" && level !== "eli10" && (c["fix_" + lang]) ? `<br><small style="color:var(--muted)">→ ${esc(c["fix_" + lang])}</small>` : ""}</td></tr>`).join("");
-    const head2 = lang === "ko" ? `점검표 · 정상 ${sum.ok || 0} · 주의 ${sum.warn || 0} · 조치 필요 ${sum.bad || 0}` : `Checklist · ok ${sum.ok || 0} · warning ${sum.warn || 0} · action needed ${sum.bad || 0}`;
-    return `<div class="kpis">${kp}</div><div class="grid2"><div class="box"><h3>${lang === "ko" ? "시간별 성장" : "Hourly growth"}</h3><div class="ch" id="c-vit"></div></div>
-      ${storage ? `<div class="box" style="grid-column:1/-1"><h3>${lang === "ko" ? "내장 SSD — 5분마다 측정" : "Internal SSD — measured every 5 minutes"}
-        <span style="float:right;font-size:13px;color:${({normal: C.teal, moving: C.amber, paused: C.coral})[storage.level]}">${({normal: lang === "ko" ? "정상" : "normal", moving: lang === "ko" ? "외장으로 옮기는 중" : "moving to external", paused: lang === "ko" ? "수집 일시정지 · 공간 확보 중" : "collection paused · freeing space"})[storage.level]}
-        · ${lang === "ko" ? "여유" : "free"} ${(storage.free_bytes / 1073741824).toFixed(0)}GB · ${lang === "ko" ? "작업 데이터" : "working set"} ${(storage.working_set_bytes / 1073741824).toFixed(0)}/${(storage.budget_bytes / 1073741824).toFixed(0)}GB</span></h3>
-        <p class="hint">${lang === "ko" ? `여유가 ${storage.thresholds_gb.move}GB 아래면 즉시 외장 이동, ${storage.thresholds_gb.pause}GB 아래면 수집 일시정지 후 ${storage.thresholds_gb.resume}GB 회복 시 자동 재개` : `Below ${storage.thresholds_gb.move} GB free: move to external now; below ${storage.thresholds_gb.pause} GB: pause collection, resume automatically at ${storage.thresholds_gb.resume} GB`}</p>
+      <td>${esc(vl(c, ""))}${c.state !== "ok" && level !== "eli10" && vl(c, "fix_") ? `<br><small style="color:var(--muted)">→ ${esc(vl(c, "fix_"))}</small>` : ""}</td></tr>`).join("");
+    const head2 = K(`점검표 · 정상 ${sum.ok || 0} · 주의 ${sum.warn || 0} · 조치 필요 ${sum.bad || 0}`, `Checklist · ok ${sum.ok || 0} · warning ${sum.warn || 0} · action needed ${sum.bad || 0}`, `Lista di controllo · ok ${sum.ok || 0} · attenzione ${sum.warn || 0} · intervento necessario ${sum.bad || 0}`, `Liste de contrôle · OK ${sum.ok || 0} · attention ${sum.warn || 0} · intervention nécessaire ${sum.bad || 0}`);
+    return `<div class="kpis">${kp}</div><div class="grid2"><div class="box"><h3>${K("시간별 성장", "Hourly growth")}</h3><div class="ch" id="c-vit"></div></div>
+      ${storage ? `<div class="box" style="grid-column:1/-1"><h3>${K("내장 SSD — 5분마다 측정", "Internal SSD — measured every 5 minutes")}
+        <span style="float:right;font-size:13px;color:${({normal: C.teal, moving: C.amber, paused: C.coral})[storage.level]}">${({normal: K("정상", "normal"), moving: K("외장으로 옮기는 중", "moving to external"), paused: K("수집 일시정지 · 공간 확보 중", "collection paused · freeing space")})[storage.level]}
+        · ${K("여유", "free")} ${(storage.free_bytes / 1073741824).toFixed(0)}GB · ${K("작업 데이터", "working set")} ${(storage.working_set_bytes / 1073741824).toFixed(0)}/${(storage.budget_bytes / 1073741824).toFixed(0)}GB</span></h3>
+        <p class="hint">${K(`여유가 ${storage.thresholds_gb.move}GB 아래면 즉시 외장 이동, ${storage.thresholds_gb.pause}GB 아래면 수집 일시정지 후 ${storage.thresholds_gb.resume}GB 회복 시 자동 재개`, `Below ${storage.thresholds_gb.move} GB free: move to external now; below ${storage.thresholds_gb.pause} GB: pause collection, resume automatically at ${storage.thresholds_gb.resume} GB`, `Sotto ${storage.thresholds_gb.move} GB liberi: spostamento immediato sul disco esterno; sotto ${storage.thresholds_gb.pause} GB: raccolta in pausa, ripresa automatica a ${storage.thresholds_gb.resume} GB`, `Sous ${storage.thresholds_gb.move} Go libres : transfert immédiat vers le disque externe ; sous ${storage.thresholds_gb.pause} Go : collecte en pause, reprise automatique à ${storage.thresholds_gb.resume} Go`)}</p>
         <div class="ch small" id="c-ssd"></div></div>` : ""}
-      <div class="box"><h3>${head2}</h3><table><tbody>${rows}</tbody></table><p class="hint" style="margin-top:8px">${lang === "ko" ? "기록 시각" : "Recorded"} ${new Date(V.at * 1000).toLocaleString(lang === "ko" ? "ko-KR" : "en-US")}</p></div></div>`;
+      <div class="box"><h3>${head2}</h3><table><tbody>${rows}</tbody></table><p class="hint" style="margin-top:8px">${K("기록 시각", "Recorded")} ${new Date(V.at * 1000).toLocaleString(LOC())}</p></div></div>`;
   },
   deep() {
     const all = ((stories || {}).stories || []), byKey = {}; all.forEach(s => byKey[s.key] = s);
     const list = all.filter(s => s.kind === "deepdive").slice(0, 16);
-    if (!list.length) return `<p class="empty">${lang === "ko" ? "첫 후속 분석을 준비하고 있습니다." : "Preparing the first follow-ups."}</p>`;
-    return `<div class="stories">${list.map(s => { const p = byKey[s.parent]; const pt = p && p.text && p.text[lang] ? p.text[lang].title : "";
-      return storyCard(s).replace('<h4>', `<p class="hint" style="margin:8px 0 0">↳ ${esc(KIND[lang][(s.facts || {}).parent_kind] || "")}${pt ? " · " + esc(pt) : ""}</p><h4>`); }).join("")}</div>`;
+    if (!list.length) return `<p class="empty">${K("첫 후속 분석을 준비하고 있습니다.", "Preparing the first follow-ups.")}</p>`;
+    return `<div class="stories">${list.map(s => { const p = byKey[s.parent]; const pt = p ? stext(p).title || "" : "";
+      return storyCard(s).replace('<h4>', `<p class="hint" style="margin:8px 0 0">↳ ${esc(kind((s.facts || {}).parent_kind) || "")}${pt ? " · " + esc(pt) : ""}</p><h4>`); }).join("")}</div>`;
   },
   news() {
     const list = ((stories || {}).stories || []).filter(s => s.kind !== "deepdive").slice(0, 12);
-    return list.length ? `<div class="stories">${list.map(storyCard).join("")}</div>` : `<p class="empty">${lang === "ko" ? "설명 에이전트가 첫 이야기를 준비하고 있습니다." : "The explainer is preparing its first stories."}</p>`;
+    return list.length ? `<div class="stories">${list.map(storyCard).join("")}</div>` : `<p class="empty">${K("설명 에이전트가 첫 이야기를 준비하고 있습니다.", "The explainer is preparing its first stories.")}</p>`;
   },
   consensus() {
     const rows = (ins.consensus || []).slice(0, 24);
@@ -202,21 +237,21 @@ const R = {
       <div class="box" style="margin-top:14px"><h3>${tx("fading")}</h3><div class="ch small" id="c-fade"></div></div>${storiesOf(["rising", "fading", "method_shift"], 12)}`;
   },
   concepts() {
-    const C0 = ins.concepts; if (!C0) return `<p class="empty">${lang === "ko" ? "다음 지식 그래프 빌드 때 첫 탐색 결과가 나옵니다." : "The first scan appears after the next graph build."}</p>`;
-    const K = C0.counts || {}, W = C0.window || {}, D = C0.adopted_detail || {};
-    const KT = {taxon: lang === "ko" ? "새 미생물 이름" : "microbe name", acronym: lang === "ko" ? "약어" : "acronym", phrase: lang === "ko" ? "용어" : "term"};
+    const C0 = ins.concepts; if (!C0) return `<p class="empty">${K("다음 지식 그래프 빌드 때 첫 탐색 결과가 나옵니다.", "The first scan appears after the next graph build.")}</p>`;
+    const CK = C0.counts || {}, W = C0.window || {}, D = C0.adopted_detail || {};
+    const KT = {taxon: K("새 미생물 이름", "microbe name"), acronym: K("약어", "acronym"), phrase: K("용어", "term")};
     const cards = (C0.emerging || []).slice(0, 18).map(c => { const d = D[c.term];
       return `<div class="card"><b class="${c.kind === "taxon" ? "tx" : ""}">${esc(c.term)}</b>
         <div class="chips"><span class="chip">${KT[c.kind] || c.kind}</span><span class="chip" style="color:${C.lime}">×${c.growth}</span>
-        <span class="chip">${fmt(c.recent_papers)} ${lang === "ko" ? "편 (최근 2년)" : "papers (2 y)"}</span>
-        <span class="chip" style="color:${c.status === "adopted" ? C.teal : C.amber}">${c.status === "adopted" ? (lang === "ko" ? "채택됨" : "adopted") : (lang === "ko" ? "후보" : "candidate") + " " + "●".repeat(Math.min(c.streak, 3)) + "○".repeat(Math.max(0, 3 - c.streak))}</span></div>
-        ${d && d.with.length ? `<p class="hint" style="margin:6px 0 0">${lang === "ko" ? "함께 등장" : "seen with"}: ${d.with.slice(0, 4).map(w => esc(w.name)).join(", ")}</p>` : ""}
+        <span class="chip">${fmt(c.recent_papers)} ${K("편 (최근 2년)", "papers (2 y)")}</span>
+        <span class="chip" style="color:${c.status === "adopted" ? C.teal : C.amber}">${c.status === "adopted" ? (K("채택됨", "adopted")) : (K("후보", "candidate")) + " " + "●".repeat(Math.min(c.streak, 3)) + "○".repeat(Math.max(0, 3 - c.streak))}</span></div>
+        ${d && d.with.length ? `<p class="hint" style="margin:6px 0 0">${K("함께 등장", "seen with")}: ${d.with.slice(0, 4).map(w => esc(ename(w))).join(", ")}</p>` : ""}
         ${level !== "eli10" && c.example.sentence ? `<p class="hint" style="margin:6px 0 0;font-style:italic">“${esc(c.example.sentence.slice(0, 220))}”</p>` : ""}</div>`; }).join("");
-    return `<div class="kpis"><div class="kpi"><b>${fmt(K.emerging)}</b><span>${lang === "ko" ? "지금 떠오르는 낯선 용어" : "unfamiliar terms rising now"}</span></div>
-      <div class="kpi"><b>${fmt(K.candidates)}</b><span>${lang === "ko" ? "지켜보는 후보" : "candidates being watched"}</span></div>
-      <div class="kpi"><b>${fmt(K.adopted)}</b><span>${lang === "ko" ? "어휘에 채택된 개념" : "concepts adopted"}</span></div>
-      <div class="kpi"><b>${fmt(W.papers_recent)} / ${fmt(W.papers_prior)}</b><span>${lang === "ko" ? `비교 논문 ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}` : `papers compared ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}`}</span></div></div>
-      <div class="box"><h3>${lang === "ko" ? "비율 성장 (최근 2년 ÷ 3–6년 전)" : "Share growth (last 2 y ÷ 3–6 y ago)"}</h3><div class="ch mid" id="c-concepts"></div></div>
+    return `<div class="kpis"><div class="kpi"><b>${fmt(CK.emerging)}</b><span>${K("지금 떠오르는 낯선 용어", "unfamiliar terms rising now")}</span></div>
+      <div class="kpi"><b>${fmt(CK.candidates)}</b><span>${K("지켜보는 후보", "candidates being watched")}</span></div>
+      <div class="kpi"><b>${fmt(CK.adopted)}</b><span>${K("어휘에 채택된 개념", "concepts adopted")}</span></div>
+      <div class="kpi"><b>${fmt(W.papers_recent)} / ${fmt(W.papers_prior)}</b><span>${K(`비교 논문 ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}`, `papers compared ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}`, `articoli confrontati ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}`, `articles comparés ${(W.recent || []).join("–")} / ${(W.prior || []).join("–")}`)}</span></div></div>
+      <div class="box"><h3>${K("비율 성장 (최근 2년 ÷ 3–6년 전)", "Share growth (last 2 y ÷ 3–6 y ago)")}</h3><div class="ch mid" id="c-concepts"></div></div>
       <div class="cards" style="margin-top:14px">${cards}</div>${storiesOf(["new_concept"], 8)}`;
   },
   map() { return `<div class="box"><div class="ch tall" id="c-map"></div></div>`; },
@@ -224,48 +259,49 @@ const R = {
     const cards = (ins.next || []).slice(0, 9).map((c, i) => { const s = c.signals;
       return `<div class="card"><span class="rk">${i + 1}</span><b>${esc(dname(c.disease, c.label))}</b>
         <div class="chips"><span class="chip" style="color:${s.growth >= 1.2 ? C.lime : s.growth < .9 ? C.coral : C.muted}">×${s.growth}</span>
-        <span class="chip" style="color:${s.contradictions ? C.amber : C.muted}">${lang === "ko" ? "엇갈림" : "conflicts"} ${s.contradictions}</span>
-        <span class="chip">${lang === "ko" ? "한계 진술" : "limitations"} ${s.gap_statements}</span></div></div>`; }).join("");
+        <span class="chip" style="color:${s.contradictions ? C.amber : C.muted}">${K("엇갈림", "conflicts")} ${s.contradictions}</span>
+        <span class="chip">${K("한계 진술", "limitations")} ${s.gap_statements}</span></div></div>`; }).join("");
     return `<div class="cards">${cards}</div><div class="box" style="margin-top:14px"><div class="ch tall" id="c-gap"></div></div>${storiesOf(["next", "hot_unsettled"], 8)}`;
   },
   minerva() {
     const A = ins.minerva_agreement || {}, opp = (ins.consensus || []).filter(p => p.minerva_agrees === false);
     if (!ins.minerva_compared) return `<p class="empty">MINERVA —</p>`;
-    return `<div class="kpis"><div class="kpi"><b>${fmt(A.minerva_pairs)}</b><span>${lang === "ko" ? "MINERVA 미생물→질병 관계" : "MINERVA microbe→condition relations"}</span></div>
-      <div class="kpi"><b>${A.compared ? Math.round(100 * A.agree / A.compared) + "%" : "—"}</b><span>${lang === "ko" ? `합의 관계 중 같은 방향 (${A.agree}/${A.compared})` : `of agreed relations point the same way (${A.agree}/${A.compared})`}</span></div>
-      <div class="kpi"><b>${fmt((ins.novel || []).length)}</b><span>${lang === "ko" ? "MINERVA에 없는 연결" : "links MINERVA lacks"}</span></div>
-      <div class="kpi"><b>${fmt(opp.length)}</b><span>${lang === "ko" ? "방향이 반대" : "opposite direction"}</span></div></div>
-      <div class="grid2"><div class="box scroll"><h3>${KIND[lang].novel}</h3><table>${head([[tx("taxon")], [tx("disease")], [`${tx("dec")} ◀ ▶ ${tx("inc")}`], [tx("papersN"), 1]])}<tbody>${pairRows((ins.novel || []).slice(0, 20), false)}</tbody></table></div>
-      <div class="box scroll"><h3>${KIND[lang].opposite}</h3><table>${head([[tx("taxon")], [tx("disease")], [`${tx("dec")} ◀ ▶ ${tx("inc")}`], [tx("papersN"), 1]])}<tbody>${pairRows(opp, false)}</tbody></table></div></div>
+    return `<div class="kpis"><div class="kpi"><b>${fmt(A.minerva_pairs)}</b><span>${K("MINERVA 미생물→질병 관계", "MINERVA microbe→condition relations")}</span></div>
+      <div class="kpi"><b>${A.compared ? Math.round(100 * A.agree / A.compared) + "%" : "—"}</b><span>${K(`합의 관계 중 같은 방향 (${A.agree}/${A.compared})`, `of agreed relations point the same way (${A.agree}/${A.compared})`, `delle relazioni concordi va nella stessa direzione (${A.agree}/${A.compared})`, `des relations consensuelles vont dans le même sens (${A.agree}/${A.compared})`)}</span></div>
+      <div class="kpi"><b>${fmt((ins.novel || []).length)}</b><span>${K("MINERVA에 없는 연결", "links MINERVA lacks")}</span></div>
+      <div class="kpi"><b>${fmt(opp.length)}</b><span>${K("방향이 반대", "opposite direction")}</span></div></div>
+      <div class="grid2"><div class="box scroll"><h3>${kind("novel")}</h3><table>${head([[tx("taxon")], [tx("disease")], [`${tx("dec")} ◀ ▶ ${tx("inc")}`], [tx("papersN"), 1]])}<tbody>${pairRows((ins.novel || []).slice(0, 20), false)}</tbody></table></div>
+      <div class="box scroll"><h3>${kind("opposite")}</h3><table>${head([[tx("taxon")], [tx("disease")], [`${tx("dec")} ◀ ▶ ${tx("inc")}`], [tx("papersN"), 1]])}<tbody>${pairRows(opp, false)}</tbody></table></div></div>
       ${storiesOf(["novel", "opposite"], 8)}`;
   },
   findings() {
     const H = snap.highlights || {}, seen = new Set(), items = [];
     Object.entries(H).forEach(([k, arr]) => arr.forEach(p => { if (!seen.has(p.pmid)) { seen.add(p.pmid); items.push({...p, theme: k}); } }));
     items.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    return `<div class="finds">${items.slice(0, 12).map(p => `<div class="find"><div class="s">${esc(lang === "ko" ? p.summary : p.title)}</div>
-      ${lang === "ko" ? `<div class="t">${esc(p.title)}</div>` : ""}<div class="m"><span>${esc(dname(p.theme, null))} · ${esc(p.journal || "")} · ${esc(p.date)}</span>
-      <a href="https://europepmc.org/article/MED/${esc(p.pmid)}" target="_blank" rel="noopener">${tx("source")} ↗</a></div></div>`).join("")}</div>`;
+    return `<div class="finds">${items.slice(0, 12).map(p => { const sm = lang === "ko" || !p.summary ? null : sumHTML(p.summary, p.title);
+      return `<div class="find"><div class="s">${sm ? sm.html : esc(lang === "ko" ? p.summary : p.title)}</div>
+      ${lang === "ko" || (sm && !sm.titled && p.title) ? `<div class="t">${esc(p.title)}</div>` : ""}<div class="m"><span>${esc(dname(p.theme, null))} · ${esc(p.journal || "")} · ${esc(p.date)}</span>
+      <a href="https://europepmc.org/article/MED/${esc(p.pmid)}" target="_blank" rel="noopener">${tx("source")} ↗</a></div></div>`; }).join("")}</div>`;
   },
   radar() { return `<div class="box"><div class="ch" id="c-radar"></div></div>`; },
   people() {
     const R = {}; (snap.researchers || []).concat(snap.researcher_extra || []).forEach(r => R[r.id] = r);
     const rk = snap.rankings || {}, M = ins.meta || {};
-    const KEYS = [["papers", lang === "ko" ? "논문 수" : "Papers", "papers"], ["citations", lang === "ko" ? "피인용 합계" : "Citations", "citations_observed"],
-                  ["h_index", lang === "ko" ? "코퍼스 내 h-지수" : "In-corpus h-index", "h_index"], ["recent", lang === "ko" ? "최근 1년 활발" : "Most active last year", "recent"]];
+    const KEYS = [["papers", K("논문 수", "Papers"), "papers"], ["citations", K("피인용 합계", "Citations"), "citations_observed"],
+                  ["h_index", K("코퍼스 내 h-지수", "In-corpus h-index"), "h_index"], ["recent", K("최근 1년 활발", "Most active last year"), "recent"]];
     const table = ([k, name, field]) => `<div class="box scroll"><h3>${name}</h3><table><tbody>${(rk[k] || []).slice(0, 15).map((id, i) => { const r = R[id]; if (!r) return "";
       return `<tr><td style="color:var(--dim);width:22px">${i + 1}</td><td><b>${esc(r.label)}</b><br><small style="color:var(--dim)">${esc(r.institution || "")}${r.country ? " · " + esc(r.country) : ""}</small></td><td class="n">${fmt(r[field])}</td></tr>`; }).join("")}</tbody></table></div>`;
-    const kp = [[fmt(M.authors), lang === "ko" ? "연구자(이름 기준)" : "Researchers (by name)"], [fmt(M.authors_10plus), lang === "ko" ? "논문 10편 이상" : "With 10+ papers"],
-      [M.top1_share != null ? Math.round(M.top1_share * 100) + "%" : "—", lang === "ko" ? "상위 1% 연구자가 쓴 저자권 비율" : "Authorships held by the top 1%"],
-      [M.gini != null ? M.gini : "—", lang === "ko" ? "저자권 집중도(지니)" : "Concentration (Gini)"],
-      [M.newcomer_share_recent != null ? Math.round(M.newcomer_share_recent * 100) + "%" : "—", lang === "ko" ? "최근 2년 활동자 중 새 얼굴" : "Newcomers among recently active"],
-      [M.team_size && M.team_size.length ? M.team_size[M.team_size.length - 1].mean_authors : "—", lang === "ko" ? "최근 논문당 평균 저자 수" : "Mean authors per paper (latest year)"]];
+    const kp = [[fmt(M.authors), K("연구자(이름 기준)", "Researchers (by name)")], [fmt(M.authors_10plus), K("논문 10편 이상", "With 10+ papers")],
+      [M.top1_share != null ? Math.round(M.top1_share * 100) + "%" : "—", K("상위 1% 연구자가 쓴 저자권 비율", "Authorships held by the top 1%")],
+      [M.gini != null ? M.gini : "—", K("저자권 집중도(지니)", "Concentration (Gini)")],
+      [M.newcomer_share_recent != null ? Math.round(M.newcomer_share_recent * 100) + "%" : "—", K("최근 2년 활동자 중 새 얼굴", "Newcomers among recently active")],
+      [M.team_size && M.team_size.length ? M.team_size[M.team_size.length - 1].mean_authors : "—", K("최근 논문당 평균 저자 수", "Mean authors per paper (latest year)")]];
     const rising = (M.rising_authors || []).map((a, i) => `<tr><td style="color:var(--dim)">${i + 1}</td><td><b>${esc(a.name)}</b></td><td class="n">${a.recent}</td><td class="n" style="color:var(--dim)">${a.earlier}</td></tr>`).join("");
     const experts = (M.experts || []).map(e => `<div class="card"><b>${esc(dname(e.disease, e.label))}</b>${e.people.map(p => `<div>${esc(p.name)} <span style="color:var(--dim)">· ${p.papers}</span></div>`).join("")}</div>`).join("");
     const journals = (M.journals || []).slice(0, 15).map((j, i) => `<tr><td style="color:var(--dim)">${i + 1}</td><td>${esc(j.journal)}</td><td class="n">${fmt(j.papers)}</td><td class="n" style="color:${j.growth >= 1.1 ? C.lime : j.growth < .9 ? C.coral : C.muted}">×${j.growth}</td></tr>`).join("");
-    const cited = (M.top_cited || []).slice(0, 12).map(p => `<div class="find"><div class="s">${esc(p.title)}</div><div class="m"><span>${esc(p.journal || "")} · ${p.year}</span><span>${lang === "ko" ? "피인용" : "cited"} ${fmt(p.citations)} · <a href="https://europepmc.org/article/MED/${esc(p.pmid)}" target="_blank" rel="noopener">${tx("source")} ↗</a></span></div></div>`).join("");
-    const H = lang === "ko" ? ["떠오르는 연구자 (최근 2년 논문 / 그 이전)", "질병별 대표 연구자", "공동 연구 별자리", "연구팀은 커지고 있나", "주요 학술지 (최근 비율 ÷ 3–5년 전)", "가장 많이 인용된 논문", "동명이인이 합산되었을 수 있습니다."]
-                            : ["Rising researchers (papers in last 2 years / before)", "Leading researchers by condition", "Collaboration constellation", "Are teams getting larger?", "Leading journals (recent share ÷ 3–5 years ago)", "Most-cited papers", "Homonyms may be pooled."];
+    const cited = (M.top_cited || []).slice(0, 12).map(p => `<div class="find"><div class="s">${esc(p.title)}</div><div class="m"><span>${esc(p.journal || "")} · ${p.year}</span><span>${K("피인용", "cited")} ${fmt(p.citations)} · <a href="https://europepmc.org/article/MED/${esc(p.pmid)}" target="_blank" rel="noopener">${tx("source")} ↗</a></span></div></div>`).join("");
+    const H = (lang === "ko" ? ["떠오르는 연구자 (최근 2년 논문 / 그 이전)", "질병별 대표 연구자", "공동 연구 별자리", "연구팀은 커지고 있나", "주요 학술지 (최근 비율 ÷ 3–5년 전)", "가장 많이 인용된 논문", "동명이인이 합산되었을 수 있습니다."]
+                            : ["Rising researchers (papers in last 2 years / before)", "Leading researchers by condition", "Collaboration constellation", "Are teams getting larger?", "Leading journals (recent share ÷ 3–5 years ago)", "Most-cited papers", "Homonyms may be pooled."]).map(h => XL() ? xlate(h) : h);
     return `<div class="kpis">${kp.map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("")}</div>
       <div class="multi">${KEYS.map(table).join("")}</div>
       <div class="grid2" style="margin-top:14px"><div class="box scroll"><h3>${H[0]}</h3><p class="hint">${H[6]}</p><table><tbody>${rising}</tbody></table></div>
@@ -278,16 +314,16 @@ const R = {
   world() {
     const top = (snap.researchers || []).slice(0, 15), inst = (snap.institutions || []).slice(0, 10);
     return `<div class="box tilemap" id="c-world"></div>
-      <div class="grid2" style="margin-top:14px"><div class="box scroll"><h3>${lang === "ko" ? "논문을 가장 많이 쓴 연구자" : "Most prolific researchers"}</h3><table>${head([["#"], [lang === "ko" ? "연구자 · 소속" : "Researcher · affiliation"], [tx("papersN"), 1]])}<tbody>
+      <div class="grid2" style="margin-top:14px"><div class="box scroll"><h3>${K("논문을 가장 많이 쓴 연구자", "Most prolific researchers")}</h3><table>${head([["#"], [K("연구자 · 소속", "Researcher · affiliation")], [tx("papersN"), 1]])}<tbody>
         ${top.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.label)}</b><br><small style="color:var(--dim)">${esc(r.institution || "")}${r.country ? " · " + esc(r.country) : ""}</small></td><td class="n">${r.papers}</td></tr>`).join("")}</tbody></table></div>
-      <div class="box scroll"><h3>${lang === "ko" ? "연구를 많이 하는 기관" : "Most active institutions"}</h3><table>${head([["#"], [lang === "ko" ? "기관" : "Institution"], [tx("papersN"), 1]])}<tbody>
+      <div class="box scroll"><h3>${K("연구를 많이 하는 기관", "Most active institutions")}</h3><table>${head([["#"], [K("기관", "Institution")], [tx("papersN"), 1]])}<tbody>
         ${inst.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name || r.label)}<br><small style="color:var(--dim)">${esc(r.country || "")}</small></td><td class="n">${r.papers}</td></tr>`).join("")}</tbody></table></div></div>`;
   },
   engine() {
     const a = (live || {}).agents || [], bf = (live || {}).backfill;
     let grid = "";
     if (bf && bf.month_grid) { const m = bf.month_grid, ys = [...new Set(Object.keys(m).map(k => k.slice(0, 4)))].sort().reverse(), work = Object.keys(m).sort().reverse().find(k => !m[k]);
-      grid = `<div class="box" style="margin-top:14px"><h3>${lang === "ko" ? "과거 논문 채우기" : "Backfill"} · ${bf.months_done}/${bf.months_total}</h3><div class="mgrid">${ys.map(y => `<span>${y}</span>` + Array.from({length: 12}, (_, i) => { const k = y + "-" + String(i + 1).padStart(2, "0");
+      grid = `<div class="box" style="margin-top:14px"><h3>${K("과거 논문 채우기", "Backfill")} · ${bf.months_done}/${bf.months_total}</h3><div class="mgrid">${ys.map(y => `<span>${y}</span>` + Array.from({length: 12}, (_, i) => { const k = y + "-" + String(i + 1).padStart(2, "0");
         return `<i class="${m[k] === true ? "done" : k === work ? "work" : ""}" data-tip="${k}"></i>`; }).join("")).join("")}</div></div>`; }
     return `<div class="agents">${a.map(x => `<div class="agent ${x.state}"><i></i><b>${esc(x.name)}</b><span>${esc(x.doing || "")}</span><em>${esc(x.metric || "")}</em></div>`).join("") || `<p class="empty">—</p>`}</div>${grid}`;
   },
@@ -306,20 +342,20 @@ const DRAW = {
     if (storage && storage.recent) {
       const R = storage.recent, th = storage.thresholds_gb;
       chart("c-ssd", {grid: {left: 50, right: 20, top: 10, bottom: 26}, tooltip: {trigger: "axis"},
-        xAxis: {type: "category", data: R.map(r => new Date(r.at * 1000).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", {hour: "2-digit", minute: "2-digit"})), axisLabel: {color: C.dim}},
+        xAxis: {type: "category", data: R.map(r => new Date(r.at * 1000).toLocaleTimeString(LOC(), {hour: "2-digit", minute: "2-digit"})), axisLabel: {color: C.dim}},
         yAxis: {type: "value", axisLabel: {color: C.dim, formatter: "{value}GB"}, splitLine: {lineStyle: {color: C.line}}},
-        series: [{type: "line", name: lang === "ko" ? "여유 공간" : "free", data: R.map(r => r.free_gb), smooth: true, showSymbol: false, lineStyle: {width: 3, color: C.teal}, areaStyle: {opacity: .1, color: C.teal},
+        series: [{type: "line", name: K("여유 공간", "free"), data: R.map(r => r.free_gb), smooth: true, showSymbol: false, lineStyle: {width: 3, color: C.teal}, areaStyle: {opacity: .1, color: C.teal},
           markLine: {silent: true, symbol: "none", data: [{yAxis: th.move, lineStyle: {color: C.amber, type: "dashed"}}, {yAxis: th.pause, lineStyle: {color: C.coral, type: "dashed"}}], label: {color: C.muted}}},
-          {type: "line", name: lang === "ko" ? "작업 데이터" : "working set", data: R.map(r => r.working_set_gb), smooth: true, showSymbol: false, lineStyle: {width: 2, color: C.violet}}]});
+          {type: "line", name: K("작업 데이터", "working set"), data: R.map(r => r.working_set_gb), smooth: true, showSymbol: false, lineStyle: {width: 2, color: C.violet}}]});
     }
     const H = (vitals.history || []).filter(h => h.papers_read != null);
-    const t = H.map(h => new Date(h.at * 1000).toLocaleString(lang === "ko" ? "ko-KR" : "en-US", {month: "numeric", day: "numeric", hour: "2-digit"}));
+    const t = H.map(h => new Date(h.at * 1000).toLocaleString(LOC(), {month: "numeric", day: "numeric", hour: "2-digit"}));
     const line = (name, key, color, axis) => ({type: "line", name, yAxisIndex: axis, data: H.map(h => h[key]), smooth: true, showSymbol: H.length < 30, lineStyle: {width: 3, color}, itemStyle: {color}, areaStyle: axis ? undefined : {opacity: .08, color}});
     chart("c-vit", {grid: {left: 64, right: 64, top: 34, bottom: 30}, tooltip: {trigger: "axis"}, legend: {top: 0, textStyle: {color: C.muted}},
       xAxis: {type: "category", data: t, axisLabel: {color: C.dim}},
       yAxis: [{type: "value", axisLabel: {color: C.dim}, splitLine: {lineStyle: {color: C.line}}}, {type: "value", axisLabel: {color: C.dim}, splitLine: {show: false}}],
-      series: [line(lang === "ko" ? "읽은 논문" : "Papers read", "papers_read", C.sky, 0), line(lang === "ko" ? "미생물 관계" : "Relations", "relations", C.coral, 1),
-               line(lang === "ko" ? "AI 재확인" : "AI-checked", "relations_ai_checked", C.violet, 1), line(lang === "ko" ? "이야기" : "Stories", "stories", C.lime, 1)]});
+      series: [line(K("읽은 논문", "Papers read"), "papers_read", C.sky, 0), line(K("미생물 관계", "Relations"), "relations", C.coral, 1),
+               line(K("AI 재확인", "AI-checked"), "relations_ai_checked", C.violet, 1), line(K("이야기", "Stories"), "stories", C.lime, 1)]});
   },
   signature() {
     const E = (ins.network || {}).edges || [], dis = (ins.network.diseases || []).slice().sort((a, b) => b.w - a.w).slice(0, 20);
@@ -356,7 +392,7 @@ const DRAW = {
   },
   gaps() {
     const G = ins.gaps, th = G.themes.filter(t => t.id !== "other"), M = G.matrix, lab = {};
-    th.forEach(t => lab[t.id] = lang === "ko" ? t.label : (((ins.labels_en || {}).theme || {})[t.id] || t.label));
+    th.forEach(t => lab[t.id] = lang === "ko" ? t.label : nm(((ins.labels_en || {}).theme || {})[t.id] || t.label));
     const data = []; M.values.forEach((row, y) => row.forEach((v, x) => v && data.push([x, y, v])));
     chart("c-gap", {grid: {left: 150, right: 10, top: 8, bottom: 130}, tooltip: {formatter: p => `${esc(dname(M.diseases[p.data[1]].id, M.diseases[p.data[1]].label))} · ${esc(lab[M.themes[p.data[0]]])}: ${p.data[2]}`},
       xAxis: {type: "category", data: M.themes.map(t => lab[t] || t), axisLabel: {color: C.muted, rotate: 40, fontSize: 11}},
@@ -383,9 +419,9 @@ const DRAW = {
   },
   radar() {
     const all = snap.topics.concat(snap.diseases).filter(t => t.growth != null && t.papers >= 200).sort((a, b) => a.growth - b.growth);
-    chart("c-radar", {grid: {left: 170, right: 50, top: 6, bottom: 20}, tooltip: {formatter: p => `${esc(lang === "ko" ? all[p.dataIndex].label : TOPIC_EN[all[p.dataIndex].id] || all[p.dataIndex].label)}: ${(p.value * 100).toFixed(1)}%`},
+    chart("c-radar", {grid: {left: 170, right: 50, top: 6, bottom: 20}, tooltip: {formatter: p => `${esc(lang === "ko" ? all[p.dataIndex].label : nm(TOPIC_EN[all[p.dataIndex].id] || all[p.dataIndex].label))}: ${(p.value * 100).toFixed(1)}%`},
       xAxis: {type: "value", axisLabel: {color: C.dim, formatter: v => (v * 100).toFixed(0) + "%"}, splitLine: {lineStyle: {color: C.line}}},
-      yAxis: {type: "category", data: all.map(t => lang === "ko" ? t.label : TOPIC_EN[t.id] || t.label), axisLabel: {color: C.text, fontSize: 11}},
+      yAxis: {type: "category", data: all.map(t => lang === "ko" ? t.label : nm(TOPIC_EN[t.id] || t.label)), axisLabel: {color: C.text, fontSize: 11}},
       series: [{type: "bar", data: all.map(t => ({value: t.growth, itemStyle: {color: t.growth > 0 ? C.lime : C.coral, borderRadius: t.growth > 0 ? [0, 6, 6, 0] : [6, 0, 0, 6]}})), barMaxWidth: 14}]});
   },
   world() {
@@ -409,26 +445,31 @@ const LEVEL_NOTE = {
   pro: ["<b>PRO</b> · 연구자용: 정의·기준값·계산식·한계를 그대로. ELI10·ELI20으로 바꾸면 같은 결과를 쉬운 말로 볼 수 있습니다.", "<b>PRO</b> · for researchers: definitions, thresholds, formulas and caveats. Switch to ELI10/ELI20 for the same results in plain language."]};
 function hero() {
   document.documentElement.lang = lang;
-  $("levelnote").innerHTML = LEVEL_NOTE[level][lang === "ko" ? 0 : 1];
+  $("levelnote").innerHTML = pick(LEVEL_NOTE[level]) +   // opens the reading-level help of the suite bar (suite.js)
+    ` <button type="button" class="ms-help-link" data-ms-help aria-haspopup="dialog">${pick(["이 페이지 읽는 법", "How to read this page", "Come leggere questa pagina", "Comment lire cette page"])}</button>`;
   document.querySelectorAll("[data-t]").forEach(el => el.textContent = tx(el.dataset.t));
   const b = (ins || {}).build || {}, k = (ins || {}).counts || {}, bud = (live || {}).budget || {};
   const counters = [[b.papers_read, tx("papers")], [k.relations_total, tx("relations")], [k.relations_ai_checked, tx("checked")],
     [(stories || {}).count, tx("stories")], [k.authors, tx("authors")], [bud.cumulative_used_usd != null ? "$" + bud.cumulative_used_usd.toFixed(2) : null, tx("cost")]].slice(0, STATIC && STATIC.public ? 5 : 6);
   $("counters").innerHTML = counters.map(([v, l]) => `<div class="counter"><b>${typeof v === "number" ? fmt(v) : (v || "—")}</b><span>${l}</span></div>`).join("");
   $("brief").innerHTML = briefText() + alive();
-  $("foot").textContent = tx("foot") + (ins ? ` · ${tx("updated")} ${ins.as_of}` : "") + (STATIC ? ` · ${lang === "ko" ? "버전" : "release"} ${STATIC.release}` : "");
+  $("foot").textContent = tx("foot") + (ins ? ` · ${tx("updated")} ${ins.as_of}` : "") + (STATIC ? ` · ${K("버전", "release")} ${STATIC.release}` : "");
 }
 function alive() {
   const r = (live || {}).readings || {}, st = stories || {};
   const deep = (st.stories || []).filter(s => s.kind === "deepdive").length;
   const per = r.validated_last_hour;
-  if (STATIC) return lang === "ko"
-    ? `<br><small style="color:var(--teal)">● ${esc(STATIC.as_of)} 기준 스냅샷 · 이야기 ${fmt(st.count)}개 · 스스로 더 파고든 분석 ${fmt(deep)}개 · 매달 새 버전으로 갱신됩니다.</small>`
-    : `<br><small style="color:var(--teal)">● Snapshot of ${esc(STATIC.as_of)} · ${fmt(st.count)} stories · ${fmt(deep)} automatic follow-ups · refreshed with a new release every month.</small>`;
+  if (STATIC) return K(
+    `<br><small style="color:var(--teal)">● ${esc(STATIC.as_of)} 기준 스냅샷 · 이야기 ${fmt(st.count)}개 · 스스로 더 파고든 분석 ${fmt(deep)}개 · 매달 새 버전으로 갱신됩니다.</small>`,
+    `<br><small style="color:var(--teal)">● Snapshot of ${esc(STATIC.as_of)} · ${fmt(st.count)} stories · ${fmt(deep)} automatic follow-ups · refreshed with a new release every month.</small>`,
+    `<br><small style="color:var(--teal)">● Istantanea del ${esc(STATIC.as_of)} · ${fmt(st.count)} storie · ${fmt(deep)} approfondimenti automatici · aggiornata ogni mese con una nuova versione.</small>`,
+    `<br><small style="color:var(--teal)">● Instantané du ${esc(STATIC.as_of)} · ${fmt(st.count)} récits · ${fmt(deep)} approfondissements automatiques · mis à jour chaque mois avec une nouvelle version.</small>`);
   if (per == null && !st.count) return "";
-  return lang === "ko"
-    ? `<br><small style="color:var(--teal)">● 지금도 채집 중 — 지난 1시간 ${fmt(per)}편 판독 · 이야기 ${fmt(st.count)}개 · 스스로 더 파고든 분석 ${fmt(deep)}개 · 3시간마다 지식 그래프와 이야기가 새로 자랍니다.</small>`
-    : `<br><small style="color:var(--teal)">● Still harvesting — ${fmt(per)} papers read in the last hour · ${fmt(st.count)} stories · ${fmt(deep)} automatic follow-ups · the graph and stories grow every three hours.</small>`;
+  return K(
+    `<br><small style="color:var(--teal)">● 지금도 채집 중 — 지난 1시간 ${fmt(per)}편 판독 · 이야기 ${fmt(st.count)}개 · 스스로 더 파고든 분석 ${fmt(deep)}개 · 3시간마다 지식 그래프와 이야기가 새로 자랍니다.</small>`,
+    `<br><small style="color:var(--teal)">● Still harvesting — ${fmt(per)} papers read in the last hour · ${fmt(st.count)} stories · ${fmt(deep)} automatic follow-ups · the graph and stories grow every three hours.</small>`,
+    `<br><small style="color:var(--teal)">● La raccolta continua — ${fmt(per)} articoli letti nell'ultima ora · ${fmt(st.count)} storie · ${fmt(deep)} approfondimenti automatici · il grafo e le storie crescono ogni tre ore.</small>`,
+    `<br><small style="color:var(--teal)">● La collecte continue — ${fmt(per)} articles lus au cours de la dernière heure · ${fmt(st.count)} récits · ${fmt(deep)} approfondissements automatiques · le graphe et les récits grandissent toutes les trois heures.</small>`);
 }
 function briefText() {
   if (!ins) return "";
@@ -440,6 +481,16 @@ function briefText() {
     return `AI가 지금까지 논문 <b>${fmt(P)}편</b>을 읽었습니다. 가장 빠르게 관심이 늘어난 질병은 <em>${esc(r[0] ? r[0].name : "")} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em>, 연구 방법은 <em>${esc(m[0] ? m[0].name : "")} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em>입니다. 가장 일관된 관계는 <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "▲" : "▼") + " " + esc(c.disease_label) : ""}</b>이고, 다음 연구가 가장 필요한 곳은 <u>${esc(n ? n.label : "")}</u>입니다.`;
   }
   const rn = r[0] ? tname("Disease", r[0]) : "", mn = m[0] ? tname("Method", m[0]) : "", cd = c ? dname(c.disease, c.disease_label) : "", nn = n ? dname(n.disease, n.label) : "";
+  if (lang === "it") {
+    if (level === "eli10") return `Un'IA ha letto <b>${fmt(P)} articoli sul microbioma</b>. Ultimamente gli scienziati studiano molto di più <em>${esc(rn)}</em>, ${c ? `e un batterio che si chiama <b>${esc(c.taxon)}</b> continua a comparire ${c.score > 0 ? "più spesso" : "meno spesso"} nelle persone con <b>${esc(cd)}</b>.` : ""} ${n ? `Il prossimo passo: serve più ricerca su <u>${esc(nn)}</u>.` : ""}`;
+    if (level === "pro") return `${fmt(P)} abstract letti automaticamente. Crescita più rapida: patologia <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em>, metodo <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em>. Concordanza più forte: <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "↑" : "↓") + " " + esc(cd) : ""}</b> (${c ? c.inc + "/" + c.dec : ""}). Concordanza di direzione con MINERVA ${ins.minerva_agreement ? ins.minerva_agreement.agree + "/" + ins.minerva_agreement.compared : "—"}. Priorità: <u>${esc(nn)}</u>.`;
+    return `Finora l'IA ha letto <b>${fmt(P)} articoli</b>. L'interesse è cresciuto più rapidamente per <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em> tra le patologie e per <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em> tra i metodi. La relazione più coerente è <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "▲" : "▼") + " " + esc(cd) : ""}</b>, e l'ambito che ha più bisogno di nuovi studi è <u>${esc(nn)}</u>.`;
+  }
+  if (lang === "fr") {
+    if (level === "eli10") return `Une IA a lu <b>${fmt(P)} articles sur le microbiome</b>. Ces derniers temps, les scientifiques étudient beaucoup plus <em>${esc(rn)}</em>, ${c ? `et un microbe qui s'appelle <b>${esc(c.taxon)}</b> apparaît ${c.score > 0 ? "plus souvent" : "moins souvent"} chez les personnes touchées par <b>${esc(cd)}</b>.` : ""} ${n ? `Prochaine étape : il faut plus de recherche sur <u>${esc(nn)}</u>.` : ""}`;
+    if (level === "pro") return `${fmt(P)} résumés lus automatiquement. Croissance la plus rapide : pathologie <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em>, méthode <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em>. Accord le plus fort : <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "↑" : "↓") + " " + esc(cd) : ""}</b> (${c ? c.inc + "/" + c.dec : ""}). Concordance de direction avec MINERVA ${ins.minerva_agreement ? ins.minerva_agreement.agree + "/" + ins.minerva_agreement.compared : "—"}. Priorité : <u>${esc(nn)}</u>.`;
+    return `Jusqu'ici, l'IA a lu <b>${fmt(P)} articles</b>. L'intérêt a le plus vite augmenté pour <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em> parmi les pathologies et pour <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em> parmi les méthodes. La relation la plus constante est <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "▲" : "▼") + " " + esc(cd) : ""}</b>, et le domaine qui a le plus besoin de nouvelles études est <u>${esc(nn)}</u>.`;
+  }
   if (level === "eli10") return `An AI has read <b>${fmt(P)} microbiome papers</b>. Scientists are studying <em>${esc(rn)}</em> much more lately, ${c ? `and a germ called <b>${esc(c.taxon)}</b> keeps showing up ${c.score > 0 ? "more" : "less"} in <b>${esc(cd)}</b>.` : ""} ${n ? `Next, <u>${esc(nn)}</u> needs more research.` : ""}`;
   if (level === "pro") return `${fmt(P)} abstracts machine-read. Fastest growth: condition <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em>, method <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em>. Strongest agreement: <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "↑" : "↓") + " " + esc(cd) : ""}</b> (${c ? c.inc + "/" + c.dec : ""}). MINERVA direction agreement ${ins.minerva_agreement ? ins.minerva_agreement.agree + "/" + ins.minerva_agreement.compared : "—"}. Priority: <u>${esc(nn)}</u>.`;
   return `The AI has read <b>${fmt(P)} papers</b> so far. Interest grew fastest in <em>${esc(rn)} ×${r[0] ? r[0].growth.toFixed(1) : ""}</em> among conditions and <em>${esc(mn)} ×${m[0] ? m[0].growth.toFixed(1) : ""}</em> among methods. The most consistent relation is <b>${c ? esc(c.taxon) + " " + (c.score > 0 ? "▲" : "▼") + " " + esc(cd) : ""}</b>, and the place most in need of new studies is <u>${esc(nn)}</u>.`;
@@ -452,14 +503,14 @@ function renderSection(id) {
   const MOD = {concepts: "insights", consensus: "insights", debate: "insights", signature: "insights", trends: "insights", map: "insights", gaps: "insights", minerva: "minerva",
                findings: "findings", radar: "radar", people: "people", world: "world", engine: "agents", vitals: "agents"};
   const jump = `<a class="jump" href="${MOD[id] ? ROUTE.module + "?m=" + MOD[id] : ROUTE.cockpit}">${tx("cockpit_link")}</a>`;
-  el.innerHTML = jump + `<p class="num">${String(ORDER.indexOf(id) + 1).padStart(2, "0")}</p><h2>${esc(S[id].t[L()])}</h2><p class="lead">${esc(lead(id))}</p>` +
+  el.innerHTML = jump + `<p class="num">${String(ORDER.indexOf(id) + 1).padStart(2, "0")}</p><h2>${esc(pick(S[id].t))}</h2><p class="lead">${esc(lead(id))}</p>` +
     (ready ? R[id]() : `<p class="empty">…</p>`);
   if (ready && DRAW[id]) DRAW[id]();
   rendered.add(id);
 }
 function build() {
   $("sections").innerHTML = ORDER.map(id => `<section class="sec" id="s-${id}"></section>`).join("");
-  $("toc").innerHTML = ORDER.map(id => `<a href="#s-${id}" data-id="${id}">${esc(S[id].t[L()])}</a>`).join("");
+  $("toc").innerHTML = ORDER.map(id => `<a href="#s-${id}" data-id="${id}">${esc(pick(S[id].t))}</a>`).join("");
   const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const id = e.target.id.slice(2);
     e.target.classList.add("in"); if (!rendered.has(id)) renderSection(id);
     document.querySelectorAll("#toc a").forEach(a => a.classList.toggle("on", a.dataset.id === id)); }), {rootMargin: "200px 0px -40% 0px"});
@@ -467,7 +518,7 @@ function build() {
 }
 function rerender() {
   hero(); strip();
-  $("toc").innerHTML = ORDER.map(id => `<a href="#s-${id}" data-id="${id}">${esc(S[id].t[L()])}</a>`).join("");
+  $("toc").innerHTML = ORDER.map(id => `<a href="#s-${id}" data-id="${id}">${esc(pick(S[id].t))}</a>`).join("");
   [...rendered].forEach(renderSection);
 }
 function toggles() {
@@ -506,10 +557,10 @@ function redraw(ids) {
 function strip() {
   const r = (live || {}).readings || {}, st = storage || {};
   const parts = [];
-  if (STATIC) { $("livestrip").innerHTML = (lang === "ko" ? "스냅샷 " : "snapshot ") + "<b>" + esc(STATIC.as_of) + "</b>"; return; }
-  if (r.validated_last_hour != null) parts.push((lang === "ko" ? "지난 1시간 판독 " : "read last hour ") + "<b>" + fmt(r.validated_last_hour) + "</b>");
+  if (STATIC) { $("livestrip").innerHTML = (K("스냅샷 ", "snapshot ")) + "<b>" + esc(STATIC.as_of) + "</b>"; return; }
+  if (r.validated_last_hour != null) parts.push((K("지난 1시간 판독 ", "read last hour ")) + "<b>" + fmt(r.validated_last_hour) + "</b>");
   if (st.free_bytes) parts.push("SSD <b>" + (st.free_bytes / 1073741824).toFixed(0) + "GB</b>");
-  if (live && live.supervisor) parts.push(live.supervisor.state === "running" ? (lang === "ko" ? "● 가동 중" : "● running") : esc(live.supervisor.state));
+  if (live && live.supervisor) parts.push(live.supervisor.state === "running" ? (K("● 가동 중", "● running")) : esc(live.supervisor.state));
   $("livestrip").innerHTML = parts.join(" · ");
 }
 function load() {
@@ -520,4 +571,638 @@ function start() {
   if (!window.MSAGE_DATA) Object.keys(SOURCES).forEach(n => setInterval(() => pull(n).then(ids => ids.length && redraw(ids)), SOURCES[n][2] * 1000));
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+/* ---- Italian words (English text -> Italian), used by K/V/nm when lang is "it"; generated, keep keys identical to the English (and to FR_WORDS) ---- */
+function IT_WORDS() { return {
+  "Cockpit": "Cruscotto",
+  "One-page story": "Storia in una pagina",
+  "Insight lab": "Laboratorio di analisi",
+  "Live in the cockpit ↗": "In tempo reale nel cruscotto ↗",
+  "M-SAGE · human microbiome research knowledge engine": "M-SAGE · motore di conoscenza sulla ricerca sul microbioma umano",
+  "Microbiome research read by AI, on one scroll": "La ricerca sul microbioma letta dall'IA, in un unico rotolo",
+  "Keep scrolling — everything appears in order ↓": "Continua a scorrere: tutto compare in ordine ↓",
+  "Papers read by AI": "Articoli letti dall'IA",
+  "Microbe relation sentences": "Frasi su relazioni microbiche",
+  "Passed AI re-check": "Superato il ricontrollo dell'IA",
+  "Stories by the explainer": "Storie dell'agente esplicativo",
+  "AI cost (total)": "Costo dell'IA (totale)",
+  "Researchers": "Ricercatori",
+  "AI-written": "Scritto dall'IA",
+  "Template · AI story coming": "Modello · storia dell'IA in arrivo",
+  "New": "Nuovo",
+  "more": "più",
+  "less": "meno",
+  "no difference": "nessuna differenza",
+  "papers": "articoli",
+  "evidence": "evidenze",
+  "Microbe": "Microbo",
+  "Condition": "Patologia",
+  "MINERVA": "MINERVA",
+  "same direction": "stessa direzione",
+  "opposite": "opposta",
+  "absent (new link)": "assente (nuovo legame)",
+  "condition not in MINERVA": "patologia assente in MINERVA",
+  "Rising": "In crescita",
+  "Fading": "In calo",
+  "Everything here is provisional: machine-extracted by AI from abstracts and their evidence sentences. It shows things reported together, not cause and effect, and is not yet expert-validated.": "Tutto ciò che vedi qui è provvisorio: estratto automaticamente dall'IA dagli abstract e dalle loro frasi di evidenza. Mostra cose riportate insieme, non cause ed effetti, e non è ancora validato da esperti.",
+  "live": "in tempo reale",
+  "as of": "aggiornato al",
+  "paper": "articolo",
+  "Conditions": "Patologie",
+  "Methods": "Metodi",
+  "Interventions": "Interventi",
+  "Metabolites": "Metaboliti",
+  "Microbes": "Microbi",
+  "Body sites": "Sedi corporee",
+  "Agreement": "Consenso",
+  "Debate": "Dibattito",
+  "Shared signal": "Segnale condiviso",
+  "New vs MINERVA": "Novità rispetto a MINERVA",
+  "Opposite to MINERVA": "Opposto a MINERVA",
+  "Next study": "Prossimo studio",
+  "Hot but unsettled": "Caldo ma irrisolto",
+  "Health-marker candidate": "Candidato marcatore di salute",
+  "Tool shift": "Cambio di strumenti",
+  "Automatic follow-up": "Approfondimento automatico",
+  "New concept": "Nuovo concetto",
+  "Newly found stories": "Storie appena scoperte",
+  "Every time our explaining robot spots an interesting shape in the pile of papers, it pins a new story here.": "Ogni volta che il nostro robot spiegatore nota una forma interessante nella montagna di articoli, appende qui una nuova storia.",
+  "Every three hours the explainer agent scans the knowledge graph for new or materially changed patterns and writes a story for each. Newest changes come first.": "Ogni tre ore l'agente esplicativo esamina il grafo della conoscenza alla ricerca di schemi nuovi o cambiati in modo sostanziale e scrive una storia per ciascuno. I cambiamenti più recenti vengono per primi.",
+  "Eleven detectors (agreement, debate, trends, signatures, MINERVA comparison, next study, composite patterns) emit fact packs; the synthesis model narrates them and any number absent from the pack is rejected. Stories are rewritten only when the 2-significant-figure fingerprint changes.": "Undici rilevatori (consenso, dibattito, tendenze, firme, confronto con MINERVA, prossimo studio, schemi compositi) producono pacchetti di fatti; il modello di sintesi li racconta e ogni numero assente dal pacchetto viene rifiutato. Le storie vengono riscritte solo quando cambia l'impronta a 2 cifre significative.",
+  "Growth log · what it needs to keep running": "Diario di crescita · cosa serve per continuare a funzionare",
+  "Every hour we write down how much the knowledge map grew. A red light in the checklist means a person needs to help.": "Ogni ora annotiamo quanto è cresciuta la mappa della conoscenza. Una luce rossa nella lista di controllo vuol dire che serve l'aiuto di una persona.",
+  "Every hour we record papers read, relations, AI checks, graph nodes, Neo4j and stories, and show the growth over the last hour and day. The checklist covers sleep settings, the external drive, disk space, budget runway, price snapshot, AI access and whether each job is alive.": "Ogni ora registriamo articoli letti, relazioni, verifiche dell'IA, nodi del grafo, Neo4j e storie, e mostriamo la crescita nell'ultima ora e nell'ultimo giorno. La lista di controllo copre impostazioni di sospensione, disco esterno, spazio su disco, autonomia del budget, listino prezzi, accesso all'IA e se ogni processo è attivo.",
+  "vitals.py runs hourly from system-watch: samples the ledger (read-only), build.json, insights and explainer state into history.jsonl (≤ 90 days) and evaluates pmset, disks and receipt ages. The graph rebuilds hourly and Neo4j is reloaded with a count check.": "vitals.py gira ogni ora da system-watch: campiona il registro (sola lettura), build.json, gli insight e lo stato dell'agente esplicativo in history.jsonl (≤ 90 giorni) e valuta pmset, dischi ed età delle ricevute. Il grafo si ricostruisce ogni ora e Neo4j viene ricaricato con un controllo dei conteggi.",
+  "Where the AI dug deeper on its own": "Dove l'IA ha scavato più a fondo da sola",
+  "When the AI finds something new, it asks 'why?' and keeps digging. If papers disagree, it sorts them by how they were done to find the reason.": "Quando l'IA trova qualcosa di nuovo, si chiede \"perché?\" e continua a scavare. Se gli articoli non sono d'accordo, li divide in base a come sono stati fatti per trovare il motivo.",
+  "Every new or materially changed pattern triggers an automatic follow-up. Conflicts are split by method, body site, period and taxonomic level to find where the direction flips; new relations get an emergence timeline; rising topics get their co-rising entities and leaders.": "Ogni schema nuovo o cambiato in modo sostanziale avvia un approfondimento automatico. I contrasti vengono suddivisi per metodo, sede corporea, periodo e livello tassonomico per trovare dove la direzione si inverte; le nuove relazioni ricevono una cronologia di emergenza; i temi in crescita, le entità che crescono con loro e chi li guida.",
+  "investigator.py: deterministic SQL over graph.sqlite → fact pack → synthesis-model narrative under the same number check. Analyses: conflict_split (sign flip of lean between feature groups, |Δlean| ≥ 0.6, ≥ 3 votes per group), emergence, co_rising (co-mention lift, last 2 y vs 3–5 y ago), signature_detail, method_adoption; once per fingerprint, ≤ 20 per run.": "investigator.py: SQL deterministico su graph.sqlite → pacchetto di fatti → narrazione del modello di sintesi con lo stesso controllo dei numeri. Analisi: conflict_split (inversione di segno della tendenza tra gruppi di caratteristiche, |Δlean| ≥ 0.6, ≥ 3 voti per gruppo), emergence, co_rising (lift delle co-menzioni, ultimi 2 anni vs 3–5 anni fa), signature_detail, method_adoption; una volta per impronta, ≤ 20 per esecuzione.",
+  "What many papers agree on": "Su cosa concordano molti articoli",
+  "These are germs that many papers say go up or down in people with a certain illness.": "Sono batteri che, secondo molti articoli, aumentano o diminuiscono nelle persone con una certa malattia.",
+  "Microbe–condition pairs where at least 60% of reporting sentences point the same way. More agreement means more confidence, but it is co-occurrence, not cause.": "Coppie microbo–patologia in cui almeno il 60% delle frasi riportate va nella stessa direzione. Più accordo vuol dire più fiducia, ma è co-occorrenza, non causa.",
+  "ASSOCIATED edges (disease vs control, sentence-level, one vote per paper per direction) with |score| ≥ 0.6 and ≥ 5 directional votes, after AI re-judgement and group-phrase grounding; MINERVA direction agreement shown.": "Archi ASSOCIATED (malattia vs controllo, a livello di frase, un voto per articolo per direzione) con |punteggio| ≥ 0.6 e ≥ 5 voti direzionali, dopo la rivalutazione dell'IA e l'ancoraggio delle frasi di gruppo; indicata la concordanza di direzione con MINERVA.",
+  "Where papers disagree": "Dove gli articoli non sono d'accordo",
+  "Some papers say 'more', others say 'less' — nobody knows the answer yet.": "Alcuni articoli dicono \"di più\", altri \"di meno\": nessuno conosce ancora la risposta.",
+  "Pairs with mixed 'more' and 'less' reports. Differences in cohorts, body sites or methods may explain it — exactly where new studies are needed.": "Coppie con resoconti misti di \"più\" e \"meno\". Differenze di coorti, sedi corporee o metodi possono spiegarlo: è proprio dove servono nuovi studi.",
+  "Minority-direction share ≥ 0.3 with ≥ 6 directional votes. Taxonomic level (species vs genus), sample site, sequencing (16S vs shotgun) and confounding are typical sources.": "Quota della direzione minoritaria ≥ 0.3 con ≥ 6 voti direzionali. Livello tassonomico (specie vs genere), sede del campione, sequenziamento (16S vs shotgun) e fattori confondenti sono le cause tipiche.",
+  "Microbes that show up across many conditions": "Microbi che compaiono in molte patologie",
+  "Some germs drop in lots of different illnesses — maybe a sign of a healthy gut.": "Alcuni batteri calano in tante malattie diverse: forse sono un segno di un intestino sano.",
+  "Microbes with a consistent direction in ≥ 3 conditions: consistently lower suggests a health-marker candidate, higher a disease-marker candidate. Red = more, blue = less.": "Microbi con direzione coerente in ≥ 3 patologie: costantemente più bassi suggeriscono un candidato marcatore di salute, più alti un candidato marcatore di malattia. Rosso = di più, blu = di meno.",
+  "Genus-level aggregation, per-pair |score| ≥ 0.5 with ≥ 3 votes. Low disease specificity may reflect shared responses (inflammation, antibiotic exposure).": "Aggregazione a livello di genere, |punteggio| per coppia ≥ 0.5 con ≥ 3 voti. Una bassa specificità di malattia può riflettere risposte condivise (infiammazione, esposizione ad antibiotici).",
+  "Rising and fading topics": "Temi in crescita e in calo",
+  "What scientists are studying more — and less — these days. Longer bars mean faster-growing interest.": "Cosa gli scienziati studiano di più, e di meno, in questo periodo. Barre più lunghe vogliono dire interesse che cresce più in fretta.",
+  "Share of recent (last 2 years) papers versus 3–5 years ago. We compare shares, not counts, because yearly collection sizes differ.": "Quota degli articoli recenti (ultimi 2 anni) rispetto a 3–5 anni fa. Confrontiamo quote, non conteggi, perché la quantità raccolta ogni anno varia.",
+  "Growth = (share in last 2 years + 1e-4)/(share 3–5 years ago + 1e-4); recent share ≥ 0.2%, ≥ 25 papers. Absolute volumes are not interpreted because of monthly collection caps.": "Crescita = (quota negli ultimi 2 anni + 1e-4)/(quota 3–5 anni fa + 1e-4); quota recente ≥ 0.2%, ≥ 25 articoli. I volumi assoluti non vengono interpretati a causa dei tetti mensili di raccolta.",
+  "New-concept radar": "Radar dei nuovi concetti",
+  "We look for words scientists have just started using. If a word we don't know keeps showing up, we add it to our dictionary after seeing it three times in a row.": "Cerchiamo le parole che gli scienziati hanno appena cominciato a usare. Se una parola che non conosciamo continua a comparire, dopo averla vista tre volte di fila la aggiungiamo al nostro dizionario.",
+  "The concept scout scans every graph build for terms our vocabulary lacks (new microbe names, acronyms, technical compounds) and compares their share in the last 2 years with 3–6 years ago. Three builds in a row and the term is adopted: it becomes a Concept node and the explainer writes about it.": "L'esploratore di concetti esamina ogni costruzione del grafo alla ricerca di termini assenti dal nostro vocabolario (nuovi nomi di microbi, acronimi, composti tecnici) e confronta la loro quota negli ultimi 2 anni con quella di 3–6 anni fa. Dopo tre costruzioni di fila il termine viene adottato: diventa un nodo Concept e l'agente esplicativo ne scrive.",
+  "Document frequency. Recent window ≥ 12 papers, share growth ≥ 4× ((prior df+0.5)/N smoothing), not in the existing vocabulary (taxa, conditions, interventions, metabolites, methods, sites), statistics and formatting terms excluded. Score = ln(growth)·√recent df (×1.5 if first seen within 5 years). 3 consecutive builds → adopted (Concept node + MENTIONS); candidates dropped after 6 misses. Collection is recency-skewed, so shares are compared, not counts.": "Frequenza nei documenti. Finestra recente ≥ 12 articoli, crescita della quota ≥ 4× (smoothing (df precedente+0.5)/N), assente dal vocabolario esistente (taxa, patologie, interventi, metaboliti, metodi, sedi), esclusi i termini statistici e di formattazione. Punteggio = ln(crescita)·√df recente (×1.5 se visto per la prima volta negli ultimi 5 anni). 3 costruzioni consecutive → adottato (nodo Concept + MENTIONS); i candidati vengono scartati dopo 6 assenze. La raccolta è sbilanciata verso gli anni recenti, quindi si confrontano quote, non conteggi.",
+  "The knowledge map": "La mappa della conoscenza",
+  "Orange circles are illnesses, green circles are germs. A line means papers talk about them together.": "I cerchi arancioni sono malattie, quelli verdi sono batteri. Una linea vuol dire che gli articoli ne parlano insieme.",
+  "Network of microbe–condition relations from evidence sentences. Red = more in the condition, blue = less, dashed amber = conflicting. Drag or zoom.": "Rete delle relazioni microbo–patologia tratte dalle frasi di evidenza. Rosso = di più nella patologia, blu = di meno, tratteggio ambra = in contrasto. Trascina o ingrandisci.",
+  "Top 70 genera and linked conditions, edges with ≥ 4 votes; width ∝ √votes. The same graph is queryable in the local Neo4j (Taxon, Disease, ASSOCIATED) with Cypher.": "Primi 70 generi e patologie collegate, archi con ≥ 4 voti; spessore ∝ √voti. Lo stesso grafo si può interrogare con Cypher nel Neo4j locale (Taxon, Disease, ASSOCIATED).",
+  "Research gaps and what to study next": "Lacune della ricerca e cosa studiare dopo",
+  "We collected the 'we still don't know this' notes scientists wrote, and ranked where to look next.": "Abbiamo raccolto le note \"questo ancora non lo sappiamo\" scritte dagli scienziati e abbiamo messo in classifica dove guardare dopo.",
+  "Authors' own limitation and gap statements grouped by theme; interest growth, conflicting results and limitations are combined into a priority list — a pointer, not a verdict.": "Le dichiarazioni di limite e di lacuna degli autori sono raggruppate per tema; crescita dell'interesse, risultati in contrasto e limiti sono combinati in una lista di priorità: un'indicazione, non un verdetto.",
+  "Score = 2·ln(growth) + 1.5·ln(1+contested pairs) + 0.8·ln(1+limitation statements) + ln(1+not in MINERVA) − 0.3·ln(1+papers). Themes from 11 lexical classes.": "Punteggio = 2·ln(crescita) + 1.5·ln(1+coppie contese) + 0.8·ln(1+dichiarazioni di limite) + ln(1+assenti in MINERVA) − 0.3·ln(1+articoli). Temi da 11 classi lessicali.",
+  "Compared with MINERVA": "Il confronto con MINERVA",
+  "We compared our results with the lab's big knowledge map, MINERVA. Mostly they agree, and a few links are brand new.": "Abbiamo confrontato i nostri risultati con la grande mappa della conoscenza del laboratorio, MINERVA. Per lo più sono d'accordo, e alcuni legami sono del tutto nuovi.",
+  "MINERVA's four graphs were copied once in full. We check whether our agreed relations point the same way and which links MINERVA does not yet have. We do not connect to MINERVA day to day.": "I quattro grafi di MINERVA sono stati copiati una volta per intero. Verifichiamo se le nostre relazioni di consenso vanno nella stessa direzione e quali legami MINERVA non ha ancora. Non ci colleghiamo a MINERVA giorno per giorno.",
+  "MINERVA main Microbe→Disease relations (POSITIVE, STRENGTH_POSITIVE*, NEGATIVE, STRENGTH_NEGATIVE) mapped to our classes by regex; 'absent' means no genus/species relation for the mapped condition and may reflect naming differences.": "Relazioni Microbe→Disease del grafo principale di MINERVA (POSITIVE, STRENGTH_POSITIVE*, NEGATIVE, STRENGTH_NEGATIVE) associate alle nostre classi tramite espressioni regolari; \"assente\" significa nessuna relazione di genere/specie per la patologia associata e può riflettere differenze di denominazione.",
+  "Latest findings": "Ultime scoperte",
+  "The most important sentence from papers the AI just read.": "La frase più importante degli articoli che l'IA ha appena letto.",
+  "Recent results the AI extracted from abstracts and checked against the source sentence. Follow the link to verify.": "Risultati recenti che l'IA ha estratto dagli abstract e verificato sulla frase della fonte. Segui il link per controllare.",
+  "Abstract-only reading (abstract-grounded-7) with quote-span grounding; any number in a summary must appear in the cited span. Full text not checked.": "Lettura dei soli abstract (abstract-grounded-7) con ancoraggio al passo citato; ogni numero in un riassunto deve comparire nel passo citato. Testo integrale non verificato.",
+  "Where attention is moving": "Dove si sposta l'attenzione",
+  "Topics studied a lot more lately are on the right; less, on the left.": "I temi studiati molto di più ultimamente sono a destra; quelli studiati di meno, a sinistra.",
+  "Change in share of papers over the last three months, by topic and condition.": "Variazione della quota di articoli negli ultimi tre mesi, per tema e patologia.",
+  "Three-month window share change from title/abstract lexical mentions (≥ 200 papers); a different window from the 2-year graph trends.": "Variazione della quota in una finestra di tre mesi, dalle menzioni lessicali in titolo/abstract (≥ 200 articoli); una finestra diversa dalle tendenze a 2 anni del grafo.",
+  "Researcher rankings and a meta-analysis of the field": "Classifiche dei ricercatori e una meta-analisi del settore",
+  "Who writes the most papers, whose papers are read most, who is new and rising, and who the experts are for each illness.": "Chi scrive più articoli, quali articoli sono più letti, chi è nuovo e in ascesa, e chi sono gli esperti per ogni malattia.",
+  "Four rankings (papers, citations, in-corpus h-index, last-year activity) plus an analysis of the field itself: team size over time, how concentrated authorship is, newcomer share, leading journals and their growth, most-cited papers, and leading researchers per condition.": "Quattro classifiche (articoli, citazioni, indice h nel corpus, attività dell'ultimo anno) più un'analisi del settore stesso: dimensione dei gruppi nel tempo, quanto è concentrata la paternità degli articoli, quota di nuovi autori, riviste principali e la loro crescita, articoli più citati e ricercatori di riferimento per ogni patologia.",
+  "Author identity: same-name merge without ORCID (homonyms may be pooled, especially short East-Asian names). Citations are Europe PMC counts at capture; h-index computed within this corpus. Concentration: Gini of authorships per author and top-1%/10% shares. Newcomer share = authors active in the last 2 years whose first corpus paper is in that window (inflated by recency-weighted collection).": "Identità degli autori: nomi uguali uniti in assenza di ORCID (gli omonimi possono essere sommati, soprattutto i nomi brevi dell'Asia orientale). Le citazioni sono i conteggi di Europe PMC al momento della raccolta; indice h calcolato all'interno di questo corpus. Concentrazione: Gini delle firme per autore e quote dell'1%/10% superiore. Quota di nuovi autori = autori attivi negli ultimi 2 anni il cui primo articolo nel corpus cade in quella finestra (gonfiata dalla raccolta sbilanciata verso gli anni recenti).",
+  "Who studies this, and where": "Chi studia questi temi, e dove",
+  "Which countries write the most papers, and who works with whom.": "Quali Paesi scrivono più articoli, e chi lavora con chi.",
+  "Papers by authors' countries, cross-country collaboration, and the most prolific researchers and institutions.": "Articoli per Paese degli autori, collaborazioni tra Paesi, e i ricercatori e le istituzioni più prolifici.",
+  "Affiliation strings (not resolved to institution IDs); same-name merge without ORCID; citations are Europe PMC counts at capture.": "Stringhe di affiliazione (non ricondotte a identificativi istituzionali); nomi uguali uniti in assenza di ORCID; le citazioni sono i conteggi di Europe PMC al momento della raccolta.",
+  "The engine right now": "Il motore in questo momento",
+  "The programs that keep collecting and reading papers. Green means working well.": "I programmi che continuano a raccogliere e leggere articoli. Verde vuol dire che funzionano bene.",
+  "What collection, AI reading, the knowledge graph, Neo4j, the MINERVA copy and the explainer are doing, plus backfill progress.": "Cosa stanno facendo raccolta, lettura dell'IA, grafo della conoscenza, Neo4j, copia di MINERVA e agente esplicativo, più l'avanzamento del recupero degli articoli passati.",
+  "The launchd supervisor re-admits services only after the full regression (237 gates) passes on code change; cost from Bedrock ledger reservations within user-approved limits.": "Il supervisore launchd riammette i servizi solo dopo che, a ogni modifica del codice, passa l'intera regressione (237 controlli); costo dalle prenotazioni del registro Bedrock entro i limiti approvati dall'utente.",
+  "Papers read": "Articoli letti",
+  "Relations": "Relazioni",
+  "AI-checked": "Verificate dall'IA",
+  "Graph nodes": "Nodi del grafo",
+  "Stories": "Storie",
+  "Follow-ups": "Approfondimenti",
+  "Hourly growth": "Crescita oraria",
+  "Internal SSD — measured every 5 minutes": "SSD interno — misurato ogni 5 minuti",
+  "normal": "normale",
+  "moving to external": "spostamento sul disco esterno",
+  "collection paused · freeing space": "raccolta in pausa · liberazione dello spazio",
+  "free": "libero",
+  "working set": "dati di lavoro",
+  "Recorded": "Registrato",
+  "Preparing the first follow-ups.": "Preparazione dei primi approfondimenti.",
+  "The explainer is preparing its first stories.": "L'agente esplicativo sta preparando le sue prime storie.",
+  "The first scan appears after the next graph build.": "La prima scansione compare dopo la prossima costruzione del grafo.",
+  "microbe name": "nome di microbo",
+  "acronym": "acronimo",
+  "term": "termine",
+  "papers (2 y)": "articoli (2 anni)",
+  "adopted": "adottato",
+  "candidate": "candidato",
+  "seen with": "visto con",
+  "unfamiliar terms rising now": "termini sconosciuti in crescita ora",
+  "candidates being watched": "candidati sotto osservazione",
+  "concepts adopted": "concetti adottati",
+  "Share growth (last 2 y ÷ 3–6 y ago)": "Crescita della quota (ultimi 2 anni ÷ 3–6 anni fa)",
+  "conflicts": "contrasti",
+  "limitations": "limiti",
+  "MINERVA microbe→condition relations": "Relazioni microbo→patologia di MINERVA",
+  "links MINERVA lacks": "legami che mancano a MINERVA",
+  "opposite direction": "direzione opposta",
+  "Papers": "Articoli",
+  "Citations": "Citazioni",
+  "In-corpus h-index": "Indice h nel corpus",
+  "Most active last year": "Più attivi nell'ultimo anno",
+  "Researchers (by name)": "Ricercatori (per nome)",
+  "With 10+ papers": "Con 10+ articoli",
+  "Authorships held by the top 1%": "Firme detenute dall'1% superiore",
+  "Concentration (Gini)": "Concentrazione (Gini)",
+  "Newcomers among recently active": "Nuovi autori tra gli attivi di recente",
+  "Mean authors per paper (latest year)": "Media di autori per articolo (ultimo anno)",
+  "cited": "citato",
+  "Most prolific researchers": "Ricercatori più prolifici",
+  "Researcher · affiliation": "Ricercatore · affiliazione",
+  "Most active institutions": "Istituzioni più attive",
+  "Institution": "Istituzione",
+  "Backfill": "Recupero arretrati",
+  "<b>ELI10</b> · for a 10-year-old: plain words, no jargon. Tap ELI20 or PRO above to see the same thing in more depth.": "<b>ELI10</b> · per un bambino di 10 anni: parole semplici, niente paroloni. Tocca ELI20 o PRO qui sopra per vedere la stessa cosa più in profondità.",
+  "<b>ELI20</b> · university level: what was counted, why it matters, what is uncertain. ELI10 is simpler; PRO adds formulas and thresholds.": "<b>ELI20</b> · livello universitario: che cosa è stato contato, perché conta, che cosa è incerto. ELI10 è più semplice; PRO aggiunge formule e soglie.",
+  "<b>PRO</b> · for researchers: definitions, thresholds, formulas and caveats. Switch to ELI10/ELI20 for the same results in plain language.": "<b>PRO</b> · per ricercatori: definizioni, soglie, formule e limiti. Passa a ELI10/ELI20 per vedere gli stessi risultati in parole semplici.",
+  "release": "versione",
+  "snapshot ": "istantanea ",
+  "read last hour ": "letti nell'ultima ora ",
+  "● running": "● in funzione",
+  "Immunity & inflammation": "Immunità e infiammazione",
+  "Microbial metabolism": "Metabolismo microbico",
+  "Diversity & dysbiosis": "Diversità e disbiosi",
+  "Antibiotics & resistance": "Antibiotici e resistenza",
+  "Oral": "Cavo orale",
+  "Barrier & permeability": "Barriera e permeabilità",
+  "Probiotics": "Probiotici",
+  "Short-chain fatty acids": "Acidi grassi a catena corta",
+  "Skin": "Pelle",
+  "Prebiotics & fibre": "Prebiotici e fibre",
+  "Bile acids": "Acidi biliari",
+  "Microbiota transplant": "Trapianto di microbiota",
+  "Cancer": "Cancro",
+  "Infection": "Infezione",
+  "Diabetes": "Diabete",
+  "Obesity": "Obesità",
+  "Cardiovascular": "Cardiovascolare",
+  "IBD": "MICI",
+  "Liver disease": "Malattie del fegato",
+  "Colorectal cancer": "Cancro del colon-retto",
+  "Depression & anxiety": "Depressione e ansia",
+  "Asthma & allergy": "Asma e allergie",
+  "Periodontal & caries": "Parodontite e carie",
+  "Alzheimer's & cognition": "Alzheimer e cognizione",
+  "Skin disease": "Malattie della pelle",
+  "Kidney disease": "Malattie renali",
+  "Parkinson's": "Parkinson",
+  "Urogenital disease": "Malattie urogenitali",
+  "Autism": "Autismo",
+  "Rising researchers (papers in last 2 years / before)": "Ricercatori emergenti (articoli negli ultimi 2 anni / prima)",
+  "Leading researchers by condition": "Ricercatori di riferimento per patologia",
+  "Collaboration constellation": "Costellazione delle collaborazioni",
+  "Are teams getting larger?": "I gruppi di ricerca stanno diventando più grandi?",
+  "Leading journals (recent share ÷ 3–5 years ago)": "Riviste principali (quota recente ÷ 3–5 anni fa)",
+  "Most-cited papers": "Articoli più citati",
+  "Homonyms may be pooled.": "Gli omonimi potrebbero essere sommati.",
+  "IBS": "IBS",
+  "Celiac disease": "Celiachia",
+  "Gastric cancer": "Cancro gastrico",
+  "Liver cancer": "Cancro del fegato",
+  "Pancreatic cancer": "Cancro del pancreas",
+  "Breast cancer": "Cancro della mammella",
+  "Lung cancer": "Cancro del polmone",
+  "Oral/head-neck cancer": "Cancro orale/testa-collo",
+  "Prostate cancer": "Cancro della prostata",
+  "Cervical lesions/HPV": "Lesioni cervicali/HPV",
+  "Cancer immunotherapy": "Immunoterapia oncologica",
+  "Type 2 diabetes": "Diabete di tipo 2",
+  "Type 1 diabetes": "Diabete di tipo 1",
+  "Gestational diabetes": "Diabete gestazionale",
+  "Metabolic syndrome": "Sindrome metabolica",
+  "Fatty liver": "Fegato grasso",
+  "Cirrhosis": "Cirrosi",
+  "Cardiovascular disease": "Malattie cardiovascolari",
+  "Hypertension": "Ipertensione",
+  "Stroke": "Ictus",
+  "Chronic kidney disease": "Malattia renale cronica",
+  "Parkinson's disease": "Malattia di Parkinson",
+  "Alzheimer's/cognitive decline": "Alzheimer/declino cognitivo",
+  "Multiple sclerosis": "Sclerosi multipla",
+  "Depression": "Depressione",
+  "Anxiety": "Ansia",
+  "Schizophrenia": "Schizofrenia",
+  "ADHD": "ADHD",
+  "Asthma": "Asma",
+  "Allergy/atopy": "Allergia/atopia",
+  "COPD": "BPCO",
+  "Cystic fibrosis": "Fibrosi cistica",
+  "COVID-19": "COVID-19",
+  "HIV": "HIV",
+  "Sepsis/critical illness": "Sepsi/malattia critica",
+  "C. difficile infection": "Infezione da C. difficile",
+  "H. pylori infection": "Infezione da H. pylori",
+  "Urinary tract infection": "Infezione delle vie urinarie",
+  "Bacterial vaginosis": "Vaginosi batterica",
+  "Preterm birth/neonatal": "Parto pretermine/neonatale",
+  "PCOS": "PCOS",
+  "Endometriosis/infertility": "Endometriosi/infertilità",
+  "Periodontitis": "Parodontite",
+  "Dental caries": "Carie dentale",
+  "Psoriasis": "Psoriasi",
+  "Atopic dermatitis/acne": "Dermatite atopica/acne",
+  "Rheumatoid arthritis": "Artrite reumatoide",
+  "Lupus": "Lupus",
+  "Spondyloarthritis": "Spondiloartrite",
+  "Osteoporosis": "Osteoporosi",
+  "Gout": "Gotta",
+  "Aging/frailty": "Invecchiamento/fragilità",
+  "Malnutrition/stunting": "Malnutrizione/arresto della crescita",
+  "Gut": "Intestino",
+  "Airway & lung": "Vie aeree e polmoni",
+  "Vaginal & reproductive": "Vagina e apparato riproduttivo",
+  "Urinary": "Vie urinarie",
+  "Breast milk": "Latte materno",
+  "Blood & tumour": "Sangue e tumore",
+  "Small samples": "Campioni piccoli",
+  "Causality / mechanism unproven": "Causalità / meccanismo non dimostrati",
+  "Cross-sectional only": "Solo studi trasversali",
+  "Limited population diversity": "Diversità della popolazione limitata",
+  "Needs external validation": "Serve una validazione esterna",
+  "Low taxonomic resolution": "Bassa risoluzione tassonomica",
+  "Diet & drug confounding": "Confondimento da dieta e farmaci",
+  "Needs clinical trials": "Servono studi clinici",
+  "Needs functional / multi-omics": "Servono analisi funzionali / multi-omiche",
+  "Methods not standardized": "Metodi non standardizzati",
+  "Animal results need human confirmation": "Risultati sugli animali da confermare nell'uomo",
+  "Other": "Altro",
+  "Synbiotics": "Simbiotici",
+  "Postbiotics": "Postbiotici",
+  "Fecal microbiota transplant": "Trapianto di microbiota fecale",
+  "Antibiotics": "Antibiotici",
+  "Diet interventions": "Interventi dietetici",
+  "Exercise": "Esercizio fisico",
+  "Phage therapy": "Terapia fagica",
+  "Metformin": "Metformina",
+  "Proton pump inhibitors": "Inibitori di pompa protonica",
+  "Bariatric surgery": "Chirurgia bariatrica",
+  "Breastfeeding": "Allattamento al seno",
+  "Caesarean birth": "Parto cesareo",
+  "Other treatments": "Altri trattamenti",
+  "16S amplicon": "Amplicone 16S",
+  "Shotgun metagenomics": "Metagenomica shotgun",
+  "Metatranscriptomics": "Metatrascrittomica",
+  "Metabolomics": "Metabolomica",
+  "Multi-omics": "Multi-omica",
+  "Culturomics & isolation": "Culturomica e isolamento",
+  "Mendelian randomization": "Randomizzazione mendeliana",
+  "Randomized trials": "Studi randomizzati",
+  "Machine learning & AI": "Apprendimento automatico e IA",
+  "Longitudinal cohorts": "Coorti longitudinali",
+  "Single-cell & spatial": "Single-cell e spaziale",
+  "Strain-level analysis": "Analisi a livello di ceppo",
+  "Virome & mycobiome": "Viroma e micobioma",
+  "Butyrate": "Butirrato",
+  "Propionate": "Propionato",
+  "TMAO": "TMAO",
+  "Tryptophan & indoles": "Triptofano e indoli",
+  "LPS / endotoxin": "LPS / endotossina",
+  "Polyphenols": "Polifenoli",
+  "Vitamins": "Vitamine",
+  "GABA & neurotransmitters": "GABA e neurotrasmettitori",
+  "Branched-chain amino acids": "Aminoacidi a catena ramificata",
+  "Cytokines": "Citochine"
+}; }
+/* ---- French words (English text -> French), used by K/V/nm when lang is "fr"; same English keys as IT_WORDS ---- */
+function FR_WORDS() { return {
+  "Cockpit": "Tableau de bord",
+  "One-page story": "Récit en une page",
+  "Insight lab": "Laboratoire d'analyse",
+  "Live in the cockpit ↗": "En direct dans le tableau de bord ↗",
+  "M-SAGE · human microbiome research knowledge engine": "M-SAGE · moteur de connaissances sur la recherche sur le microbiome humain",
+  "Microbiome research read by AI, on one scroll": "La recherche sur le microbiome lue par l'IA, sur un seul défilement",
+  "Keep scrolling — everything appears in order ↓": "Continuez à faire défiler — tout apparaît dans l'ordre ↓",
+  "Papers read by AI": "Articles lus par l'IA",
+  "Microbe relation sentences": "Phrases de relations microbiennes",
+  "Passed AI re-check": "Validées par la seconde vérification de l'IA",
+  "Stories by the explainer": "Récits de l'agent explicateur",
+  "AI cost (total)": "Coût de l'IA (total)",
+  "Researchers": "Chercheurs",
+  "AI-written": "Rédigé par l'IA",
+  "Template · AI story coming": "Modèle · récit de l'IA à venir",
+  "New": "Nouveau",
+  "more": "plus",
+  "less": "moins",
+  "no difference": "aucune différence",
+  "papers": "articles",
+  "evidence": "preuves",
+  "Microbe": "Microbe",
+  "Condition": "Pathologie",
+  "MINERVA": "MINERVA",
+  "same direction": "même sens",
+  "opposite": "opposé",
+  "absent (new link)": "absent (nouveau lien)",
+  "condition not in MINERVA": "pathologie absente de MINERVA",
+  "Rising": "En hausse",
+  "Fading": "En baisse",
+  "Everything here is provisional: machine-extracted by AI from abstracts and their evidence sentences. It shows things reported together, not cause and effect, and is not yet expert-validated.": "Tout ce qui figure ici est provisoire : extrait automatiquement par l'IA à partir des résumés et de leurs phrases de preuve. Cela montre des choses rapportées ensemble, pas des causes et des effets, et ce n'est pas encore validé par des experts.",
+  "live": "en direct",
+  "as of": "au",
+  "paper": "article",
+  "Conditions": "Pathologies",
+  "Methods": "Méthodes",
+  "Interventions": "Interventions",
+  "Metabolites": "Métabolites",
+  "Microbes": "Microbes",
+  "Body sites": "Sites corporels",
+  "Agreement": "Accord",
+  "Debate": "Débat",
+  "Shared signal": "Signal partagé",
+  "New vs MINERVA": "Nouveau par rapport à MINERVA",
+  "Opposite to MINERVA": "Opposé à MINERVA",
+  "Next study": "Prochaine étude",
+  "Hot but unsettled": "En vogue mais non tranché",
+  "Health-marker candidate": "Candidat marqueur de santé",
+  "Tool shift": "Changement d'outils",
+  "Automatic follow-up": "Approfondissement automatique",
+  "New concept": "Nouveau concept",
+  "Newly found stories": "Récits nouvellement découverts",
+  "Every time our explaining robot spots an interesting shape in the pile of papers, it pins a new story here.": "Chaque fois que notre robot explicateur repère une forme intéressante dans la pile d'articles, il épingle ici un nouveau récit.",
+  "Every three hours the explainer agent scans the knowledge graph for new or materially changed patterns and writes a story for each. Newest changes come first.": "Toutes les trois heures, l'agent explicateur parcourt le graphe de connaissances à la recherche de motifs nouveaux ou sensiblement modifiés et rédige un récit pour chacun. Les changements les plus récents viennent en premier.",
+  "Eleven detectors (agreement, debate, trends, signatures, MINERVA comparison, next study, composite patterns) emit fact packs; the synthesis model narrates them and any number absent from the pack is rejected. Stories are rewritten only when the 2-significant-figure fingerprint changes.": "Onze détecteurs (accord, débat, tendances, signatures, comparaison avec MINERVA, prochaine étude, motifs composites) produisent des paquets de faits ; le modèle de synthèse les met en récit et tout nombre absent du paquet est rejeté. Les récits ne sont réécrits que si l'empreinte à 2 chiffres significatifs change.",
+  "Growth log · what it needs to keep running": "Journal de croissance · ce qu'il faut pour que ça continue à tourner",
+  "Every hour we write down how much the knowledge map grew. A red light in the checklist means a person needs to help.": "Toutes les heures, on note de combien la carte des connaissances a grandi. Un voyant rouge dans la liste veut dire qu'une personne doit venir aider.",
+  "Every hour we record papers read, relations, AI checks, graph nodes, Neo4j and stories, and show the growth over the last hour and day. The checklist covers sleep settings, the external drive, disk space, budget runway, price snapshot, AI access and whether each job is alive.": "Toutes les heures, nous enregistrons les articles lus, les relations, les vérifications de l'IA, les nœuds du graphe, Neo4j et les récits, et montrons la croissance sur la dernière heure et le dernier jour. La liste de contrôle couvre les réglages de veille, le disque externe, l'espace disque, l'autonomie du budget, l'instantané de prix, l'accès à l'IA et l'état de chaque tâche.",
+  "vitals.py runs hourly from system-watch: samples the ledger (read-only), build.json, insights and explainer state into history.jsonl (≤ 90 days) and evaluates pmset, disks and receipt ages. The graph rebuilds hourly and Neo4j is reloaded with a count check.": "vitals.py s'exécute toutes les heures depuis system-watch : échantillonne le registre (lecture seule), build.json, insights et l'état de l'explicateur dans history.jsonl (≤ 90 jours) et évalue pmset, les disques et l'âge des reçus. Le graphe est reconstruit toutes les heures et Neo4j est rechargé avec un contrôle des effectifs.",
+  "Where the AI dug deeper on its own": "Là où l'IA a creusé plus loin d'elle-même",
+  "When the AI finds something new, it asks 'why?' and keeps digging. If papers disagree, it sorts them by how they were done to find the reason.": "Quand l'IA trouve quelque chose de nouveau, elle se demande « pourquoi ? » et continue de creuser. Si les articles ne sont pas d'accord, elle les trie selon la façon dont ils ont été faits pour trouver la raison.",
+  "Every new or materially changed pattern triggers an automatic follow-up. Conflicts are split by method, body site, period and taxonomic level to find where the direction flips; new relations get an emergence timeline; rising topics get their co-rising entities and leaders.": "Chaque motif nouveau ou sensiblement modifié déclenche un approfondissement automatique. Les conflits sont décomposés par méthode, site corporel, période et niveau taxonomique pour trouver où le sens s'inverse ; les nouvelles relations reçoivent une chronologie d'apparition ; les thèmes en hausse reçoivent leurs entités co-montantes et leurs chefs de file.",
+  "investigator.py: deterministic SQL over graph.sqlite → fact pack → synthesis-model narrative under the same number check. Analyses: conflict_split (sign flip of lean between feature groups, |Δlean| ≥ 0.6, ≥ 3 votes per group), emergence, co_rising (co-mention lift, last 2 y vs 3–5 y ago), signature_detail, method_adoption; once per fingerprint, ≤ 20 per run.": "investigator.py : SQL déterministe sur graph.sqlite → paquet de faits → récit du modèle de synthèse sous le même contrôle des nombres. Analyses : conflict_split (inversion de signe de la tendance entre groupes de caractéristiques, |Δtendance| ≥ 0,6, ≥ 3 votes par groupe), emergence, co_rising (lift de co-mention, 2 dernières années vs il y a 3–5 ans), signature_detail, method_adoption ; une fois par empreinte, ≤ 20 par exécution.",
+  "What many papers agree on": "Ce sur quoi beaucoup d'articles s'accordent",
+  "These are germs that many papers say go up or down in people with a certain illness.": "Ce sont des microbes dont beaucoup d'articles disent qu'ils augmentent ou diminuent chez les personnes atteintes d'une certaine maladie.",
+  "Microbe–condition pairs where at least 60% of reporting sentences point the same way. More agreement means more confidence, but it is co-occurrence, not cause.": "Paires microbe–pathologie où au moins 60 % des phrases rapportées vont dans le même sens. Plus d'accord veut dire plus de confiance, mais il s'agit de co-occurrence, pas de cause.",
+  "ASSOCIATED edges (disease vs control, sentence-level, one vote per paper per direction) with |score| ≥ 0.6 and ≥ 5 directional votes, after AI re-judgement and group-phrase grounding; MINERVA direction agreement shown.": "Arêtes ASSOCIATED (maladie vs témoins, au niveau de la phrase, un vote par article et par sens) avec |score| ≥ 0,6 et ≥ 5 votes directionnels, après nouveau jugement par l'IA et ancrage des expressions de groupe ; concordance de direction avec MINERVA affichée.",
+  "Where papers disagree": "Là où les articles divergent",
+  "Some papers say 'more', others say 'less' — nobody knows the answer yet.": "Certains articles disent « plus », d'autres « moins » — personne ne connaît encore la réponse.",
+  "Pairs with mixed 'more' and 'less' reports. Differences in cohorts, body sites or methods may explain it — exactly where new studies are needed.": "Paires avec des comptes rendus mélangés « plus » et « moins ». Des différences de cohortes, de sites corporels ou de méthodes peuvent l'expliquer — c'est précisément là qu'il faut de nouvelles études.",
+  "Minority-direction share ≥ 0.3 with ≥ 6 directional votes. Taxonomic level (species vs genus), sample site, sequencing (16S vs shotgun) and confounding are typical sources.": "Part du sens minoritaire ≥ 0,3 avec ≥ 6 votes directionnels. Le niveau taxonomique (espèce vs genre), le site de prélèvement, le séquençage (16S vs shotgun) et les facteurs de confusion en sont les sources typiques.",
+  "Microbes that show up across many conditions": "Des microbes présents dans de nombreuses pathologies",
+  "Some germs drop in lots of different illnesses — maybe a sign of a healthy gut.": "Certains microbes baissent dans plein de maladies différentes — peut-être le signe d'un intestin en bonne santé.",
+  "Microbes with a consistent direction in ≥ 3 conditions: consistently lower suggests a health-marker candidate, higher a disease-marker candidate. Red = more, blue = less.": "Microbes de sens constant dans ≥ 3 pathologies : constamment plus bas évoque un candidat marqueur de santé, plus élevé un candidat marqueur de maladie. Rouge = plus, bleu = moins.",
+  "Genus-level aggregation, per-pair |score| ≥ 0.5 with ≥ 3 votes. Low disease specificity may reflect shared responses (inflammation, antibiotic exposure).": "Agrégation au niveau du genre, |score| par paire ≥ 0,5 avec ≥ 3 votes. Une faible spécificité pour la maladie peut refléter des réponses communes (inflammation, exposition aux antibiotiques).",
+  "Rising and fading topics": "Thèmes en hausse et en baisse",
+  "What scientists are studying more — and less — these days. Longer bars mean faster-growing interest.": "Ce que les scientifiques étudient plus — et moins — en ce moment. Plus la barre est longue, plus l'intérêt grandit vite.",
+  "Share of recent (last 2 years) papers versus 3–5 years ago. We compare shares, not counts, because yearly collection sizes differ.": "Part des articles récents (2 dernières années) par rapport à il y a 3 à 5 ans. Nous comparons des parts, pas des effectifs, car la taille de la collecte annuelle varie.",
+  "Growth = (share in last 2 years + 1e-4)/(share 3–5 years ago + 1e-4); recent share ≥ 0.2%, ≥ 25 papers. Absolute volumes are not interpreted because of monthly collection caps.": "Croissance = (part des 2 dernières années + 1e-4)/(part d'il y a 3–5 ans + 1e-4) ; part récente ≥ 0,2 %, ≥ 25 articles. Les volumes absolus ne sont pas interprétés en raison des plafonds de collecte mensuels.",
+  "New-concept radar": "Radar des nouveaux concepts",
+  "We look for words scientists have just started using. If a word we don't know keeps showing up, we add it to our dictionary after seeing it three times in a row.": "On cherche les mots que les scientifiques viennent de commencer à utiliser. Si un mot qu'on ne connaît pas revient sans cesse, on l'ajoute à notre dictionnaire après l'avoir vu trois fois de suite.",
+  "The concept scout scans every graph build for terms our vocabulary lacks (new microbe names, acronyms, technical compounds) and compares their share in the last 2 years with 3–6 years ago. Three builds in a row and the term is adopted: it becomes a Concept node and the explainer writes about it.": "L'éclaireur de concepts examine chaque construction du graphe à la recherche de termes absents de notre vocabulaire (nouveaux noms de microbes, acronymes, composés techniques) et compare leur part des 2 dernières années à celle d'il y a 3 à 6 ans. Après trois constructions consécutives, le terme est adopté : il devient un nœud Concept et l'explicateur en parle.",
+  "Document frequency. Recent window ≥ 12 papers, share growth ≥ 4× ((prior df+0.5)/N smoothing), not in the existing vocabulary (taxa, conditions, interventions, metabolites, methods, sites), statistics and formatting terms excluded. Score = ln(growth)·√recent df (×1.5 if first seen within 5 years). 3 consecutive builds → adopted (Concept node + MENTIONS); candidates dropped after 6 misses. Collection is recency-skewed, so shares are compared, not counts.": "Fréquence documentaire. Fenêtre récente ≥ 12 articles, croissance de la part ≥ 4× (lissage (df antérieure+0,5)/N), absent du vocabulaire existant (taxons, pathologies, interventions, métabolites, méthodes, sites), termes statistiques et de mise en forme exclus. Score = ln(croissance)·√df récente (×1,5 si vu pour la première fois il y a moins de 5 ans). 3 constructions consécutives → adopté (nœud Concept + MENTIONS) ; candidats abandonnés après 6 absences. La collecte étant biaisée vers les années récentes, on compare des parts, pas des effectifs.",
+  "The knowledge map": "La carte des connaissances",
+  "Orange circles are illnesses, green circles are germs. A line means papers talk about them together.": "Les cercles orange sont des maladies, les cercles verts des microbes. Un trait veut dire que des articles parlent des deux ensemble.",
+  "Network of microbe–condition relations from evidence sentences. Red = more in the condition, blue = less, dashed amber = conflicting. Drag or zoom.": "Réseau des relations microbe–pathologie issues des phrases de preuve. Rouge = plus dans la pathologie, bleu = moins, pointillés ambre = contradictoire. Faites glisser ou zoomez.",
+  "Top 70 genera and linked conditions, edges with ≥ 4 votes; width ∝ √votes. The same graph is queryable in the local Neo4j (Taxon, Disease, ASSOCIATED) with Cypher.": "70 premiers genres et pathologies liées, arêtes avec ≥ 4 votes ; épaisseur ∝ √votes. Le même graphe est interrogeable en Cypher dans le Neo4j local (Taxon, Disease, ASSOCIATED).",
+  "Research gaps and what to study next": "Lacunes de la recherche et prochaines études",
+  "We collected the 'we still don't know this' notes scientists wrote, and ranked where to look next.": "Nous avons rassemblé les notes « on ne sait pas encore ça » écrites par les scientifiques, et classé les endroits où chercher ensuite.",
+  "Authors' own limitation and gap statements grouped by theme; interest growth, conflicting results and limitations are combined into a priority list — a pointer, not a verdict.": "Les énoncés de limites et de lacunes des auteurs eux-mêmes, regroupés par thème ; croissance de l'intérêt, résultats contradictoires et limites sont combinés en une liste de priorités — une piste, pas un verdict.",
+  "Score = 2·ln(growth) + 1.5·ln(1+contested pairs) + 0.8·ln(1+limitation statements) + ln(1+not in MINERVA) − 0.3·ln(1+papers). Themes from 11 lexical classes.": "Score = 2·ln(croissance) + 1,5·ln(1+paires contestées) + 0,8·ln(1+énoncés de limites) + ln(1+absent de MINERVA) − 0,3·ln(1+articles). Thèmes issus de 11 classes lexicales.",
+  "Compared with MINERVA": "Comparaison avec MINERVA",
+  "We compared our results with the lab's big knowledge map, MINERVA. Mostly they agree, and a few links are brand new.": "Nous avons comparé nos résultats avec la grande carte des connaissances du laboratoire, MINERVA. La plupart du temps, ils sont d'accord, et quelques liens sont tout nouveaux.",
+  "MINERVA's four graphs were copied once in full. We check whether our agreed relations point the same way and which links MINERVA does not yet have. We do not connect to MINERVA day to day.": "Les quatre graphes de MINERVA ont été copiés une fois en entier. Nous vérifions si nos relations de consensus vont dans le même sens et quels liens MINERVA n'a pas encore. Nous ne nous connectons pas à MINERVA au quotidien.",
+  "MINERVA main Microbe→Disease relations (POSITIVE, STRENGTH_POSITIVE*, NEGATIVE, STRENGTH_NEGATIVE) mapped to our classes by regex; 'absent' means no genus/species relation for the mapped condition and may reflect naming differences.": "Relations Microbe→Maladie principales de MINERVA (POSITIVE, STRENGTH_POSITIVE*, NEGATIVE, STRENGTH_NEGATIVE) rattachées à nos classes par expressions régulières ; « absent » signifie aucune relation de genre/espèce pour la pathologie rattachée et peut refléter des différences de nom.",
+  "Latest findings": "Derniers résultats",
+  "The most important sentence from papers the AI just read.": "La phrase la plus importante des articles que l'IA vient de lire.",
+  "Recent results the AI extracted from abstracts and checked against the source sentence. Follow the link to verify.": "Résultats récents que l'IA a extraits des résumés et vérifiés par rapport à la phrase source. Suivez le lien pour vérifier.",
+  "Abstract-only reading (abstract-grounded-7) with quote-span grounding; any number in a summary must appear in the cited span. Full text not checked.": "Lecture des seuls résumés (abstract-grounded-7) avec ancrage sur l'extrait cité ; tout nombre d'un résumé doit figurer dans l'extrait cité. Texte intégral non vérifié.",
+  "Where attention is moving": "Où se déplace l'attention",
+  "Topics studied a lot more lately are on the right; less, on the left.": "Les sujets beaucoup plus étudiés ces derniers temps sont à droite ; ceux qui le sont moins, à gauche.",
+  "Change in share of papers over the last three months, by topic and condition.": "Variation de la part d'articles au cours des trois derniers mois, par thème et par pathologie.",
+  "Three-month window share change from title/abstract lexical mentions (≥ 200 papers); a different window from the 2-year graph trends.": "Variation de la part sur une fenêtre de trois mois à partir des mentions lexicales dans le titre/résumé (≥ 200 articles) ; une fenêtre différente des tendances du graphe sur 2 ans.",
+  "Researcher rankings and a meta-analysis of the field": "Classements des chercheurs et méta-analyse du domaine",
+  "Who writes the most papers, whose papers are read most, who is new and rising, and who the experts are for each illness.": "Qui écrit le plus d'articles, quels articles sont les plus lus, qui est nouveau et monte, et qui sont les experts de chaque maladie.",
+  "Four rankings (papers, citations, in-corpus h-index, last-year activity) plus an analysis of the field itself: team size over time, how concentrated authorship is, newcomer share, leading journals and their growth, most-cited papers, and leading researchers per condition.": "Quatre classements (articles, citations, indice h dans le corpus, activité de la dernière année) plus une analyse du domaine lui-même : taille des équipes au fil du temps, concentration de la signature, part des nouveaux venus, principales revues et leur croissance, articles les plus cités et chercheurs de référence par pathologie.",
+  "Author identity: same-name merge without ORCID (homonyms may be pooled, especially short East-Asian names). Citations are Europe PMC counts at capture; h-index computed within this corpus. Concentration: Gini of authorships per author and top-1%/10% shares. Newcomer share = authors active in the last 2 years whose first corpus paper is in that window (inflated by recency-weighted collection).": "Identité des auteurs : fusion par nom identique sans ORCID (des homonymes peuvent être regroupés, en particulier les noms courts d'Asie de l'Est). Les citations sont les comptes Europe PMC au moment de la capture ; indice h calculé dans ce corpus. Concentration : Gini des signatures par auteur et parts du top 1 %/10 %. Part des nouveaux venus = auteurs actifs au cours des 2 dernières années dont le premier article du corpus se situe dans cette fenêtre (gonflée par la collecte pondérée vers les années récentes).",
+  "Who studies this, and where": "Qui étudie cela, et où",
+  "Which countries write the most papers, and who works with whom.": "Quels pays écrivent le plus d'articles, et qui travaille avec qui.",
+  "Papers by authors' countries, cross-country collaboration, and the most prolific researchers and institutions.": "Articles par pays des auteurs, collaborations entre pays, et chercheurs et établissements les plus prolifiques.",
+  "Affiliation strings (not resolved to institution IDs); same-name merge without ORCID; citations are Europe PMC counts at capture.": "Chaînes d'affiliation (non résolues en identifiants d'établissement) ; fusion par nom identique sans ORCID ; les citations sont les comptes Europe PMC au moment de la capture.",
+  "The engine right now": "Le moteur en ce moment",
+  "The programs that keep collecting and reading papers. Green means working well.": "Les programmes qui continuent de ramasser et de lire des articles. Vert veut dire que tout marche bien.",
+  "What collection, AI reading, the knowledge graph, Neo4j, the MINERVA copy and the explainer are doing, plus backfill progress.": "Ce que font la collecte, la lecture par l'IA, le graphe de connaissances, Neo4j, la copie de MINERVA et l'explicateur, ainsi que l'avancement du rattrapage.",
+  "The launchd supervisor re-admits services only after the full regression (237 gates) passes on code change; cost from Bedrock ledger reservations within user-approved limits.": "Le superviseur launchd ne réadmet les services qu'une fois la régression complète (237 contrôles) réussie après un changement de code ; coût issu des réservations du registre Bedrock dans les limites approuvées par l'utilisateur.",
+  "Papers read": "Articles lus",
+  "Relations": "Relations",
+  "AI-checked": "Vérifiées par l'IA",
+  "Graph nodes": "Nœuds du graphe",
+  "Stories": "Récits",
+  "Follow-ups": "Approfondissements",
+  "Hourly growth": "Croissance horaire",
+  "Internal SSD — measured every 5 minutes": "SSD interne — mesuré toutes les 5 minutes",
+  "normal": "normal",
+  "moving to external": "transfert vers le disque externe",
+  "collection paused · freeing space": "collecte en pause · libération d'espace",
+  "free": "libre",
+  "working set": "données de travail",
+  "Recorded": "Enregistré",
+  "Preparing the first follow-ups.": "Préparation des premiers approfondissements.",
+  "The explainer is preparing its first stories.": "L'explicateur prépare ses premiers récits.",
+  "The first scan appears after the next graph build.": "Le premier balayage apparaîtra après la prochaine construction du graphe.",
+  "microbe name": "nom de microbe",
+  "acronym": "acronyme",
+  "term": "terme",
+  "papers (2 y)": "articles (2 ans)",
+  "adopted": "adopté",
+  "candidate": "candidat",
+  "seen with": "vu avec",
+  "unfamiliar terms rising now": "termes inconnus en hausse en ce moment",
+  "candidates being watched": "candidats sous surveillance",
+  "concepts adopted": "concepts adoptés",
+  "Share growth (last 2 y ÷ 3–6 y ago)": "Croissance de la part (2 dernières années ÷ il y a 3–6 ans)",
+  "conflicts": "conflits",
+  "limitations": "limites",
+  "MINERVA microbe→condition relations": "Relations microbe→pathologie de MINERVA",
+  "links MINERVA lacks": "liens absents de MINERVA",
+  "opposite direction": "sens opposé",
+  "Papers": "Articles",
+  "Citations": "Citations",
+  "In-corpus h-index": "Indice h dans le corpus",
+  "Most active last year": "Les plus actifs l'an dernier",
+  "Researchers (by name)": "Chercheurs (par nom)",
+  "With 10+ papers": "Avec 10 articles ou plus",
+  "Authorships held by the top 1%": "Part des signatures détenue par le top 1 %",
+  "Concentration (Gini)": "Concentration (Gini)",
+  "Newcomers among recently active": "Nouveaux venus parmi les actifs récents",
+  "Mean authors per paper (latest year)": "Nombre moyen d'auteurs par article (dernière année)",
+  "cited": "cité",
+  "Most prolific researchers": "Chercheurs les plus prolifiques",
+  "Researcher · affiliation": "Chercheur · affiliation",
+  "Most active institutions": "Établissements les plus actifs",
+  "Institution": "Établissement",
+  "Backfill": "Rattrapage",
+  "<b>ELI10</b> · for a 10-year-old: plain words, no jargon. Tap ELI20 or PRO above to see the same thing in more depth.": "<b>ELI10</b> · pour un enfant de 10 ans : des mots simples, sans jargon. Touche ELI20 ou PRO en haut pour voir la même chose plus en détail.",
+  "<b>ELI20</b> · university level: what was counted, why it matters, what is uncertain. ELI10 is simpler; PRO adds formulas and thresholds.": "<b>ELI20</b> · niveau universitaire : ce qui a été compté, pourquoi c'est important, ce qui reste incertain. ELI10 est plus simple ; PRO ajoute formules et seuils.",
+  "<b>PRO</b> · for researchers: definitions, thresholds, formulas and caveats. Switch to ELI10/ELI20 for the same results in plain language.": "<b>PRO</b> · pour les chercheurs : définitions, seuils, formules et limites. Passez à ELI10/ELI20 pour les mêmes résultats en langage courant.",
+  "release": "version",
+  "snapshot ": "instantané ",
+  "read last hour ": "lu dans la dernière heure ",
+  "● running": "● en marche",
+  "Immunity & inflammation": "Immunité et inflammation",
+  "Microbial metabolism": "Métabolisme microbien",
+  "Diversity & dysbiosis": "Diversité et dysbiose",
+  "Antibiotics & resistance": "Antibiotiques et résistance",
+  "Oral": "Cavité buccale",
+  "Barrier & permeability": "Barrière et perméabilité",
+  "Probiotics": "Probiotiques",
+  "Short-chain fatty acids": "Acides gras à chaîne courte",
+  "Skin": "Peau",
+  "Prebiotics & fibre": "Prébiotiques et fibres",
+  "Bile acids": "Acides biliaires",
+  "Microbiota transplant": "Transplantation de microbiote",
+  "Cancer": "Cancer",
+  "Infection": "Infection",
+  "Diabetes": "Diabète",
+  "Obesity": "Obésité",
+  "Cardiovascular": "Cardiovasculaire",
+  "IBD": "MICI",
+  "Liver disease": "Maladies du foie",
+  "Colorectal cancer": "Cancer colorectal",
+  "Depression & anxiety": "Dépression et anxiété",
+  "Asthma & allergy": "Asthme et allergie",
+  "Periodontal & caries": "Parodontie et caries",
+  "Alzheimer's & cognition": "Alzheimer et cognition",
+  "Skin disease": "Maladies de la peau",
+  "Kidney disease": "Maladies rénales",
+  "Parkinson's": "Parkinson",
+  "Urogenital disease": "Maladies urogénitales",
+  "Autism": "Autisme",
+  "Rising researchers (papers in last 2 years / before)": "Chercheurs en ascension (articles des 2 dernières années / avant)",
+  "Leading researchers by condition": "Chercheurs de référence par pathologie",
+  "Collaboration constellation": "Constellation des collaborations",
+  "Are teams getting larger?": "Les équipes s'agrandissent-elles ?",
+  "Leading journals (recent share ÷ 3–5 years ago)": "Principales revues (part récente ÷ il y a 3–5 ans)",
+  "Most-cited papers": "Articles les plus cités",
+  "Homonyms may be pooled.": "Des homonymes peuvent être regroupés.",
+  "IBS": "SII",
+  "Celiac disease": "Maladie cœliaque",
+  "Gastric cancer": "Cancer de l'estomac",
+  "Liver cancer": "Cancer du foie",
+  "Pancreatic cancer": "Cancer du pancréas",
+  "Breast cancer": "Cancer du sein",
+  "Lung cancer": "Cancer du poumon",
+  "Oral/head-neck cancer": "Cancer de la bouche/tête et cou",
+  "Prostate cancer": "Cancer de la prostate",
+  "Cervical lesions/HPV": "Lésions du col de l'utérus/HPV",
+  "Cancer immunotherapy": "Immunothérapie du cancer",
+  "Type 2 diabetes": "Diabète de type 2",
+  "Type 1 diabetes": "Diabète de type 1",
+  "Gestational diabetes": "Diabète gestationnel",
+  "Metabolic syndrome": "Syndrome métabolique",
+  "Fatty liver": "Stéatose hépatique",
+  "Cirrhosis": "Cirrhose",
+  "Cardiovascular disease": "Maladies cardiovasculaires",
+  "Hypertension": "Hypertension artérielle",
+  "Stroke": "AVC",
+  "Chronic kidney disease": "Maladie rénale chronique",
+  "Parkinson's disease": "Maladie de Parkinson",
+  "Alzheimer's/cognitive decline": "Alzheimer/déclin cognitif",
+  "Multiple sclerosis": "Sclérose en plaques",
+  "Depression": "Dépression",
+  "Anxiety": "Anxiété",
+  "Schizophrenia": "Schizophrénie",
+  "ADHD": "TDAH",
+  "Asthma": "Asthme",
+  "Allergy/atopy": "Allergie/atopie",
+  "COPD": "BPCO",
+  "Cystic fibrosis": "Mucoviscidose",
+  "COVID-19": "COVID-19",
+  "HIV": "VIH",
+  "Sepsis/critical illness": "Sepsis/réanimation",
+  "C. difficile infection": "Infection à C. difficile",
+  "H. pylori infection": "Infection à H. pylori",
+  "Urinary tract infection": "Infection urinaire",
+  "Bacterial vaginosis": "Vaginose bactérienne",
+  "Preterm birth/neonatal": "Prématurité/néonatal",
+  "PCOS": "SOPK",
+  "Endometriosis/infertility": "Endométriose/infertilité",
+  "Periodontitis": "Parodontite",
+  "Dental caries": "Caries dentaires",
+  "Psoriasis": "Psoriasis",
+  "Atopic dermatitis/acne": "Dermatite atopique/acné",
+  "Rheumatoid arthritis": "Polyarthrite rhumatoïde",
+  "Lupus": "Lupus",
+  "Spondyloarthritis": "Spondyloarthrite",
+  "Osteoporosis": "Ostéoporose",
+  "Gout": "Goutte",
+  "Aging/frailty": "Vieillissement/fragilité",
+  "Malnutrition/stunting": "Dénutrition/retard de croissance",
+  "Gut": "Intestin",
+  "Airway & lung": "Voies aériennes et poumon",
+  "Vaginal & reproductive": "Vagin et appareil reproducteur",
+  "Urinary": "Voies urinaires",
+  "Breast milk": "Lait maternel",
+  "Blood & tumour": "Sang et tumeur",
+  "Small samples": "Petits échantillons",
+  "Causality / mechanism unproven": "Causalité / mécanisme non démontré",
+  "Cross-sectional only": "Uniquement transversal",
+  "Limited population diversity": "Diversité de population limitée",
+  "Needs external validation": "Validation externe nécessaire",
+  "Low taxonomic resolution": "Faible résolution taxonomique",
+  "Diet & drug confounding": "Confusion par l'alimentation et les médicaments",
+  "Needs clinical trials": "Essais cliniques nécessaires",
+  "Needs functional / multi-omics": "Études fonctionnelles / multi-omiques nécessaires",
+  "Methods not standardized": "Méthodes non standardisées",
+  "Animal results need human confirmation": "Résultats chez l'animal à confirmer chez l'humain",
+  "Other": "Autre",
+  "Synbiotics": "Symbiotiques",
+  "Postbiotics": "Postbiotiques",
+  "Fecal microbiota transplant": "Transplantation de microbiote fécal",
+  "Antibiotics": "Antibiotiques",
+  "Diet interventions": "Interventions alimentaires",
+  "Exercise": "Activité physique",
+  "Phage therapy": "Phagothérapie",
+  "Metformin": "Metformine",
+  "Proton pump inhibitors": "Inhibiteurs de la pompe à protons",
+  "Bariatric surgery": "Chirurgie bariatrique",
+  "Breastfeeding": "Allaitement maternel",
+  "Caesarean birth": "Naissance par césarienne",
+  "Other treatments": "Autres traitements",
+  "16S amplicon": "Amplicons 16S",
+  "Shotgun metagenomics": "Métagénomique shotgun",
+  "Metatranscriptomics": "Métatranscriptomique",
+  "Metabolomics": "Métabolomique",
+  "Multi-omics": "Multi-omique",
+  "Culturomics & isolation": "Culturomique et isolement",
+  "Mendelian randomization": "Randomisation mendélienne",
+  "Randomized trials": "Essais randomisés",
+  "Machine learning & AI": "Apprentissage automatique et IA",
+  "Longitudinal cohorts": "Cohortes longitudinales",
+  "Single-cell & spatial": "Cellule unique et spatial",
+  "Strain-level analysis": "Analyse au niveau de la souche",
+  "Virome & mycobiome": "Virome et mycobiome",
+  "Butyrate": "Butyrate",
+  "Propionate": "Propionate",
+  "TMAO": "TMAO",
+  "Tryptophan & indoles": "Tryptophane et indoles",
+  "LPS / endotoxin": "LPS / endotoxine",
+  "Polyphenols": "Polyphénols",
+  "Vitamins": "Vitamines",
+  "GABA & neurotransmitters": "GABA et neurotransmetteurs",
+  "Branched-chain amino acids": "Acides aminés à chaîne ramifiée",
+  "Cytokines": "Cytokines"
+}; }
 })();

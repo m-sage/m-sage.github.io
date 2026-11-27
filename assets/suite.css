@@ -56,3 +56,34 @@
 .ms-suite{flex-wrap:wrap;row-gap:8px}.ms-brand{min-width:0}.ms-tabs{flex-wrap:wrap;max-width:100%}
 @media (max-width:1240px){.ms-brand span{display:none}}
 .topbar .toggles{flex-wrap:wrap}
+/* reading-level help: "?" next to the ELI10 · ELI20 · PRO switch and its popover (suite.js) */
+.ms-help-btn{flex:none;width:26px;height:26px;padding:0;border-radius:50%;border:1px solid rgba(167,139,250,.55);background:rgba(167,139,250,.12);color:#ddd6fe;
+  font:700 13px/1 Geist,Inter,system-ui,sans-serif;cursor:pointer;display:inline-grid;place-items:center;align-self:center;transition:background .2s,color .2s}
+.ms-help-btn:hover,.ms-help-btn[aria-expanded="true"]{background:#a78bfa;color:#0b0820}
+.ms-help-btn:focus-visible,.ms-help-x:focus-visible,.ms-help-link:focus-visible,.ms-help a:focus-visible{outline:2px solid #7dd3fc;outline-offset:2px}
+.ms-help{position:fixed;z-index:60;top:64px;right:16px;width:min(400px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100vh - 80px);overflow:auto;
+  box-sizing:border-box;padding:16px 18px 14px;border-radius:16px;color:#e6ecff;font:13.5px/1.55 Geist,Inter,"Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  background:linear-gradient(180deg,rgba(18,26,56,.96),rgba(8,12,28,.97));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(167,139,250,.35);box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 28px rgba(167,139,250,.18);overflow-wrap:anywhere}
+.ms-help[hidden]{display:none}
+.ms-help:focus{outline:none}
+.ms-help *{box-sizing:border-box}
+.ms-help h2{margin:0 28px 6px 0;font-size:15px;font-weight:700;color:#fff}
+.ms-help h3{margin:12px 0 4px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#a78bfa}
+.ms-help p{margin:6px 0}
+.ms-help-x{position:absolute;top:8px;right:8px;width:30px;height:30px;border:0;border-radius:50%;background:rgba(255,255,255,.06);color:#c7d2fe;font-size:18px;line-height:1;cursor:pointer}
+.ms-help-x:hover{background:rgba(255,255,255,.14);color:#fff}
+.ms-help-lv{margin:8px 0;display:grid;gap:6px}
+.ms-help-lv > div{display:grid;grid-template-columns:52px 1fr;gap:8px;align-items:baseline;padding:6px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03)}
+.ms-help-lv > div.on{border-color:rgba(167,139,250,.6);background:rgba(167,139,250,.12)}
+.ms-help-lv dt{font-weight:800;font-size:12px;letter-spacing:.06em;color:#a78bfa}
+.ms-help-lv dd{margin:0;min-width:0}
+.ms-help-same{color:#99f6e4}
+.ms-help ul{margin:4px 0;padding-left:18px}.ms-help li{margin:3px 0}
+.ms-help a{color:#7dd3fc}.ms-help code{font-size:12px;word-break:break-all}
+.ms-help-note{color:#8d9bc4;font-size:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;margin-top:10px!important}
+.ms-help-link{font:inherit;font-size:inherit;color:#7dd3fc;background:none;border:0;padding:0;margin-left:6px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+@media (max-width:520px){.ms-help{left:16px!important;right:16px!important;width:auto;padding:14px 14px 12px;font-size:13px}.ms-help-lv > div{grid-template-columns:46px 1fr}}
+/* AI paper summaries shown in another language: small marks for "original title" and "translation pending" */
+.sx{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;border:1px solid rgba(141,155,196,.4);color:#8d9bc4;font-size:.72em;font-weight:500;line-height:1.5;vertical-align:.08em;white-space:nowrap}
+.sx.sx-pend{white-space:normal;display:inline}
