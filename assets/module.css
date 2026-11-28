@@ -87,3 +87,16 @@ td.flags{min-width:120px}td.rep{white-space:nowrap;font-size:12px}td.rep small{d
 .cards{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}
 #ipane{display:grid;gap:12px;min-width:0}
 @media (max-width:640px){.seg.big-seg button{font-size:12px;padding:6px 10px}.box h2{font-size:15px}.ctl select{max-width:230px}}
+/* "how to read" block under every chart and table title: what · how to read · key point */
+.rb{margin:2px 0 12px;padding:9px 12px;border:1px solid #ffffff12;border-left:3px solid #38bdf866;border-radius:4px 12px 12px 4px;background:#ffffff06;color:var(--muted);font-size:12.5px;line-height:1.55;overflow-wrap:anywhere}
+.rb p{margin:0;display:grid;grid-template-columns:6.4em minmax(0,1fr);gap:0 10px;align-items:baseline}
+.rb p+p{margin-top:4px}
+.rb p[hidden]{display:none}
+.rb p>b{font-size:10.5px;font-weight:600;letter-spacing:.03em;color:var(--dim);white-space:nowrap}
+.rb p>span i{color:#99f6e4}
+.rb .rb-key{color:var(--text);margin-top:6px;padding-top:6px;border-top:1px dashed #ffffff14}
+.rb .rb-key>b{color:var(--teal)}
+.rb.rb-eli10{font-size:13.5px;line-height:1.6;border-left-color:#a3e63588}
+.rb.rb-eli10 .rb-key{font-size:14px}
+.rb.rb-pro{font-size:11.5px;line-height:1.5;border-left-color:#a78bfa88}
+@media (max-width:640px){.rb{padding:8px 10px}.rb p{grid-template-columns:minmax(0,1fr)}.rb p>b{margin-bottom:1px}}
